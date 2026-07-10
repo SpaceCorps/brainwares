@@ -1033,6 +1033,9 @@ export default function App() {
   const [viewMode, setViewMode] = useState('doc');
   const [graphMode, setGraphMode] = useState(data.memories && data.memories.length > 150 ? 'local' : 'global');
   const canvasRef = useRef(null);
+  const zoomInButtonRef = useRef(null);
+  const zoomOutButtonRef = useRef(null);
+  const zoomResetButtonRef = useRef(null);
 
   const preprocessMarkdown = (text) => {
     if (!text) return '';
@@ -1094,22 +1097,44 @@ export default function App() {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
-    // 1. Calculate nodes
+    // Pan & Zoom values kept in animation closure for high performance (60fps with zero React state overhead)
+    let zoom = graphMode === 'local' ? 1.0 : 0.6; // start slightly zoomed out in global mode
+    let pan = { x: canvas.width / 2, y: canvas.height / 2 };
+    let isPanning = false;
+    let panStart = { x: 0, y: 0 };
+    let draggedNode = null;
+
+    // 1. Calculate nodes (centered around virtual origin 0,0)
     const nodes = memories.map((m, index) => {
       const angle = (index / memories.length) * Math.PI * 2;
-      const radius = Math.min(canvas.width, canvas.height) * 0.3;
+      const radiusDist = 200 + Math.random() * 80;
       const id = (m.name || '').toLowerCase();
       const name = m.frontmatter?.title || m.name || '';
       const isCurrent = id === (selectedNoteName || '').toLowerCase();
       const isGlobal = (m.file_path || '').includes('.config');
+      
+      // Proximity to main node (nesting depth)
+      const depth = id === 'index' ? 0 : id.split('-').length;
+      let nodeRadius = 8;
+      if (depth === 0) {
+        nodeRadius = 24; // main node is largest
+      } else if (depth === 1) {
+        nodeRadius = 16;
+      } else if (depth === 2) {
+        nodeRadius = 12;
+      }
+      if (isCurrent) {
+        nodeRadius += 4;
+      }
+      
       return {
         id,
         name,
-        x: canvas.width / 2 + Math.cos(angle) * radius,
-        y: canvas.height / 2 + Math.sin(angle) * radius,
+        x: Math.cos(angle) * radiusDist,
+        y: Math.sin(angle) * radiusDist,
         vx: 0,
         vy: 0,
-        radius: isCurrent ? 12 : 8,
+        radius: nodeRadius,
         isGlobal,
       };
     });
@@ -1159,11 +1184,11 @@ export default function App() {
       activeNodes.forEach((node, index) => {
         if (node.id !== selectedId) {
           const angle = (index / activeNodes.length) * Math.PI * 2;
-          node.x = canvas.width / 2 + Math.cos(angle) * 120;
-          node.y = canvas.height / 2 + Math.sin(angle) * 120;
+          node.x = Math.cos(angle) * 120;
+          node.y = Math.sin(angle) * 120;
         } else {
-          node.x = canvas.width / 2;
-          node.y = canvas.height / 2;
+          node.x = 0;
+          node.y = 0;
         }
       });
     } else {
@@ -1188,7 +1213,6 @@ export default function App() {
     }
 
     let animationId;
-    let draggedNode = null;
 
     const step = () => {
       // Collision repulsion force
@@ -1199,7 +1223,7 @@ export default function App() {
           const dx = n2.x - n1.x;
           const dy = n2.y - n1.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const repulsionRadius = graphMode === 'local' ? 150 : 180;
+          const repulsionRadius = n1.radius + n2.radius + (graphMode === 'local' ? 80 : 110);
           if (dist < repulsionRadius) {
             // Cap repulsion force to prevent node explosions
             const force = Math.min(8, (repulsionRadius - dist) * 0.05);
@@ -1225,9 +1249,9 @@ export default function App() {
         if (n2 !== draggedNode) { n2.vx -= fx; n2.vy -= fy; }
       });
 
-      // Gravity force to center
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
+      // Gravity force to center origin (0,0)
+      const cx = 0;
+      const cy = 0;
       activeNodes.forEach(node => {
         if (node === draggedNode) return;
         const dx = cx - node.x;
@@ -1244,26 +1268,37 @@ export default function App() {
         node.vx *= 0.8;
         node.vy *= 0.8;
         
-        node.x = Math.max(20, Math.min(canvas.width - 20, node.x));
-        node.y = Math.max(20, Math.min(canvas.height - 20, node.y));
+        // Large virtual boundary to allow expansive layout
+        node.x = Math.max(-2000, Math.min(2000, node.x));
+        node.y = Math.max(-2000, Math.min(2000, node.y));
       });
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Grid background
+      // Render all elements inside the Pan & Zoom transform matrix space
+      ctx.save();
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+
+      // Grid background drawn dynamically in visible bounding box
       ctx.strokeStyle = '#18181b';
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1 / zoom;
       const gridSize = 40;
-      for (let x = 0; x < canvas.width; x += gridSize) {
+      const startX = Math.floor((-pan.x) / (gridSize * zoom)) * gridSize - gridSize;
+      const endX = startX + Math.ceil(canvas.width / (gridSize * zoom)) * gridSize + gridSize * 2;
+      const startY = Math.floor((-pan.y) / (gridSize * zoom)) * gridSize - gridSize;
+      const endY = startY + Math.ceil(canvas.height / (gridSize * zoom)) * gridSize + gridSize * 2;
+
+      for (let x = startX; x < endX; x += gridSize) {
         ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
+        ctx.moveTo(x, startY);
+        ctx.lineTo(x, endY);
         ctx.stroke();
       }
-      for (let y = 0; y < canvas.height; y += gridSize) {
+      for (let y = startY; y < endY; y += gridSize) {
         ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
+        ctx.moveTo(startX, y);
+        ctx.lineTo(endX, y);
         ctx.stroke();
       }
 
@@ -1280,10 +1315,10 @@ export default function App() {
         
         if (isConnectedToSelected) {
           ctx.strokeStyle = '#818cf8'; // Glowing indigo edge for active connections
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 2 / zoom;
         } else {
           ctx.strokeStyle = '#27272a'; // Faint gray edge for other connections
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 1 / zoom;
         }
         ctx.stroke();
       });
@@ -1335,7 +1370,7 @@ export default function App() {
         if (isCurrent) {
           ctx.fillStyle = '#ffffff';
           ctx.strokeStyle = '#818cf8';
-          ctx.lineWidth = 2.5;
+          ctx.lineWidth = 2.5 / zoom;
           ctx.stroke();
         } else {
           ctx.fillStyle = nodeColor;
@@ -1343,18 +1378,21 @@ export default function App() {
         ctx.fill();
 
         const shouldShowLabel = 
+          zoom > 0.8 ||
           graphMode === 'local' || 
           isCurrent || 
           node.id === 'index' || 
           (selectedNoteName && selectedNoteName.toLowerCase().startsWith(node.id + '-'));
 
         if (shouldShowLabel) {
-          ctx.font = isCurrent ? 'bold 12px sans-serif' : '11px sans-serif';
+          ctx.font = `${isCurrent ? 'bold' : ''} ${12 / zoom}px sans-serif`;
           ctx.fillStyle = isCurrent ? '#ffffff' : '#a1a1aa';
           ctx.textAlign = 'center';
-          ctx.fillText(node.name, node.x, node.y - node.radius - 8);
+          ctx.fillText(node.name, node.x, node.y - node.radius - (8 / zoom));
         }
       });
+
+      ctx.restore();
 
       animationId = requestAnimationFrame(step);
     };
@@ -1367,34 +1405,100 @@ export default function App() {
       };
     };
 
+    // Calculate mouse position inside virtual coordinate space
+    const getVirtualMousePos = (e) => {
+      const mousePos = getMousePos(e);
+      return {
+        x: (mousePos.x - pan.x) / zoom,
+        y: (mousePos.y - pan.y) / zoom,
+      };
+    };
+
     const handleMouseDown = (e) => {
-      const pos = getMousePos(e);
+      const mousePos = getMousePos(e);
+      const virtualPos = getVirtualMousePos(e);
+      
       const clicked = activeNodes.find(node => {
-        const dx = node.x - pos.x;
-        const dy = node.y - pos.y;
-        return Math.sqrt(dx * dx + dy * dy) < node.radius + 10;
+        const dx = node.x - virtualPos.x;
+        const dy = node.y - virtualPos.y;
+        return Math.sqrt(dx * dx + dy * dy) < node.radius + 15;
       });
 
       if (clicked) {
         draggedNode = clicked;
         setSelectedNoteName(clicked.id);
+      } else {
+        isPanning = true;
+        panStart.x = mousePos.x - pan.x;
+        panStart.y = mousePos.y - pan.y;
       }
     };
 
     const handleMouseMove = (e) => {
-      if (!draggedNode) return;
-      const pos = getMousePos(e);
-      draggedNode.x = pos.x;
-      draggedNode.y = pos.y;
+      const mousePos = getMousePos(e);
+      if (draggedNode) {
+        const virtualPos = getVirtualMousePos(e);
+        draggedNode.x = virtualPos.x;
+        draggedNode.y = virtualPos.y;
+        draggedNode.vx = 0;
+        draggedNode.vy = 0;
+      } else if (isPanning) {
+        pan.x = mousePos.x - panStart.x;
+        pan.y = mousePos.y - panStart.y;
+      }
     };
 
     const handleMouseUp = () => {
       draggedNode = null;
+      isPanning = false;
+    };
+
+    // Mouse scroll wheel / trackpad zoom-around-cursor
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const zoomIntensity = 0.05;
+      const mousePos = getMousePos(e);
+      const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
+      const nextZoom = Math.max(0.1, Math.min(8, zoom * zoomFactor));
+      
+      pan.x = mousePos.x - (mousePos.x - pan.x) * (nextZoom / zoom);
+      pan.y = mousePos.y - (mousePos.y - pan.y) * (nextZoom / zoom);
+      zoom = nextZoom;
+    };
+
+    // Zoom Overlay Controls (Ref Bound Click Listeners)
+    const handleZoomIn = () => {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const nextZoom = Math.min(8, zoom * 1.25);
+      pan.x = cx - (cx - pan.x) * (nextZoom / zoom);
+      pan.y = cy - (cy - pan.y) * (nextZoom / zoom);
+      zoom = nextZoom;
+    };
+    const handleZoomOut = () => {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const nextZoom = Math.max(0.1, zoom / 1.25);
+      pan.x = cx - (cx - pan.x) * (nextZoom / zoom);
+      pan.y = cy - (cy - pan.y) * (nextZoom / zoom);
+      zoom = nextZoom;
+    };
+    const handleZoomReset = () => {
+      zoom = graphMode === 'local' ? 1.0 : 0.6;
+      pan = { x: canvas.width / 2, y: canvas.height / 2 };
     };
 
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+
+    const zoomInBtn = zoomInButtonRef.current;
+    const zoomOutBtn = zoomOutButtonRef.current;
+    const zoomResetBtn = zoomResetButtonRef.current;
+    if (zoomInBtn) zoomInBtn.addEventListener('click', handleZoomIn);
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', handleZoomOut);
+    if (zoomResetBtn) zoomResetBtn.addEventListener('click', handleZoomReset);
 
     animationId = requestAnimationFrame(step);
 
@@ -1404,6 +1508,10 @@ export default function App() {
       canvas.removeEventListener('mousedown', handleMouseDown);
       canvas.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('wheel', handleWheel);
+      if (zoomInBtn) zoomInBtn.removeEventListener('click', handleZoomIn);
+      if (zoomOutBtn) zoomOutBtn.removeEventListener('click', handleZoomOut);
+      if (zoomResetBtn) zoomResetBtn.removeEventListener('click', handleZoomReset);
     };
   }, [viewMode, memories, selectedNoteName, graphMode]);
 
@@ -1674,6 +1782,30 @@ export default function App() {
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${graphMode === 'global' ? 'bg-indigo-600 text-zinc-100 shadow-md shadow-indigo-500/10' : 'bg-transparent text-zinc-500 hover:text-zinc-300'}`}
                 >
                   Global Graph
+                </button>
+              </div>
+              
+              <div className="absolute bottom-6 right-6 p-1 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-xl flex items-center space-x-1 select-none z-20">
+                <button
+                  ref={zoomInButtonRef}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                  title="Zoom In"
+                >
+                  ＋
+                </button>
+                <button
+                  ref={zoomOutButtonRef}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                  title="Zoom Out"
+                >
+                  －
+                </button>
+                <button
+                  ref={zoomResetButtonRef}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                  title="Reset View"
+                >
+                  ⟲
                 </button>
               </div>
               
