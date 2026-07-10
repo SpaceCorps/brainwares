@@ -1103,11 +1103,13 @@ export default function App() {
     let isPanning = false;
     let panStart = { x: 0, y: 0 };
     let draggedNode = null;
+    let alpha = 1.0; // simulation cooling parameter
 
     // 1. Calculate nodes (centered around virtual origin 0,0)
     const nodes = memories.map((m, index) => {
       const angle = (index / memories.length) * Math.PI * 2;
-      const radiusDist = 200 + Math.random() * 80;
+      const spread = Math.sqrt(memories.length) * 18 + 100;
+      const radiusDist = spread + Math.random() * 80;
       const id = (m.name || '').toLowerCase();
       const name = m.frontmatter?.title || m.name || '';
       const isCurrent = id === (selectedNoteName || '').toLowerCase();
@@ -1192,86 +1194,78 @@ export default function App() {
         }
       });
     } else {
-      // Global graph: Cap to top 250 connected nodes to prevent quadratic lag and explosions on 1000+ notes
-      if (nodes.length > 250) {
-        const degree = {};
-        nodes.forEach(n => degree[n.id] = 0);
-        edges.forEach(e => {
-          if (degree[e.source.id] !== undefined) degree[e.source.id]++;
-          if (degree[e.target.id] !== undefined) degree[e.target.id]++;
-        });
-        
-        const sorted = [...nodes].sort((a, b) => (degree[b.id] || 0) - (degree[a.id] || 0));
-        const top = new Set(sorted.slice(0, 250).map(n => n.id));
-        
-        activeNodes = nodes.filter(n => top.has(n.id));
-        activeEdges = edges.filter(e => top.has(e.source.id) && top.has(e.target.id));
-      } else {
-        activeNodes = nodes;
-        activeEdges = edges;
-      }
+      // Global graph: Render all nodes completely to prevent disjointed subsets
+      activeNodes = nodes;
+      activeEdges = edges;
     }
 
     let animationId;
 
     const step = () => {
-      // Collision repulsion force
-      for (let i = 0; i < activeNodes.length; i++) {
-        for (let j = i + 1; j < activeNodes.length; j++) {
+      if (alpha > 0.01) {
+        // Collision repulsion force (O(N^2) loop highly optimized with squared distance comparisons)
+        for (let i = 0; i < activeNodes.length; i++) {
           const n1 = activeNodes[i];
-          const n2 = activeNodes[j];
+          for (let j = i + 1; j < activeNodes.length; j++) {
+            const n2 = activeNodes[j];
+            const dx = n2.x - n1.x;
+            const dy = n2.y - n1.y;
+            const distSq = dx * dx + dy * dy;
+            const repulsionRadius = n1.radius + n2.radius + (graphMode === 'local' ? 80 : 110);
+            const rSq = repulsionRadius * repulsionRadius;
+            
+            if (distSq < rSq) {
+              const dist = Math.sqrt(distSq) || 1;
+              const force = Math.min(8, (repulsionRadius - dist) * 0.05) * alpha;
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+              if (n1 !== draggedNode) { n1.vx -= fx; n1.vy -= fy; }
+              if (n2 !== draggedNode) { n2.vx += fx; n2.vy += fy; }
+            }
+          }
+        }
+
+        // Link attraction force
+        activeEdges.forEach(edge => {
+          const n1 = edge.source;
+          const n2 = edge.target;
           const dx = n2.x - n1.x;
           const dy = n2.y - n1.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const repulsionRadius = n1.radius + n2.radius + (graphMode === 'local' ? 80 : 110);
-          if (dist < repulsionRadius) {
-            // Cap repulsion force to prevent node explosions
-            const force = Math.min(8, (repulsionRadius - dist) * 0.05);
-            const fx = (dx / dist) * force;
-            const fy = (dy / dist) * force;
-            if (n1 !== draggedNode) { n1.vx -= fx; n1.vy -= fy; }
-            if (n2 !== draggedNode) { n2.vx += fx; n2.vy += fy; }
-          }
-        }
+          const force = dist * 0.015 * alpha;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          if (n1 !== draggedNode) { n1.vx += fx; n1.vy += fy; }
+          if (n2 !== draggedNode) { n2.vx -= fx; n2.vy -= fy; }
+        });
+
+        // Gravity force to center origin (0,0)
+        const cx = 0;
+        const cy = 0;
+        activeNodes.forEach(node => {
+          if (node === draggedNode) return;
+          const dx = cx - node.x;
+          const dy = cy - node.y;
+          node.vx += dx * 0.003 * alpha;
+          node.vy += dy * 0.003 * alpha;
+        });
+
+        // Apply velocities with damping to stabilize the graph quickly
+        activeNodes.forEach(node => {
+          if (node === draggedNode) return;
+          node.x += node.vx;
+          node.y += node.vy;
+          node.vx *= 0.8;
+          node.vy *= 0.8;
+          
+          // Large virtual boundary to allow expansive layout
+          node.x = Math.max(-2000, Math.min(2000, node.x));
+          node.y = Math.max(-2000, Math.min(2000, node.y));
+        });
+
+        // Cooling decay rate
+        alpha *= 0.985;
       }
-
-      // Link attraction force
-      activeEdges.forEach(edge => {
-        const n1 = edge.source;
-        const n2 = edge.target;
-        const dx = n2.x - n1.x;
-        const dy = n2.y - n1.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = dist * 0.015;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        if (n1 !== draggedNode) { n1.vx += fx; n1.vy += fy; }
-        if (n2 !== draggedNode) { n2.vx -= fx; n2.vy -= fy; }
-      });
-
-      // Gravity force to center origin (0,0)
-      const cx = 0;
-      const cy = 0;
-      activeNodes.forEach(node => {
-        if (node === draggedNode) return;
-        const dx = cx - node.x;
-        const dy = cy - node.y;
-        node.vx += dx * 0.003;
-        node.vy += dy * 0.003;
-      });
-
-      // Apply velocities with damping to stabilize the graph quickly
-      activeNodes.forEach(node => {
-        if (node === draggedNode) return;
-        node.x += node.vx;
-        node.y += node.vy;
-        node.vx *= 0.8;
-        node.vy *= 0.8;
-        
-        // Large virtual boundary to allow expansive layout
-        node.x = Math.max(-2000, Math.min(2000, node.x));
-        node.y = Math.max(-2000, Math.min(2000, node.y));
-      });
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1415,6 +1409,7 @@ export default function App() {
     };
 
     const handleMouseDown = (e) => {
+      alpha = 1.0; // wake up simulation
       const mousePos = getMousePos(e);
       const virtualPos = getVirtualMousePos(e);
       
@@ -1435,6 +1430,7 @@ export default function App() {
     };
 
     const handleMouseMove = (e) => {
+      alpha = 1.0; // wake up simulation
       const mousePos = getMousePos(e);
       if (draggedNode) {
         const virtualPos = getVirtualMousePos(e);
@@ -1456,6 +1452,7 @@ export default function App() {
     // Mouse scroll wheel / trackpad zoom-around-cursor
     const handleWheel = (e) => {
       e.preventDefault();
+      alpha = 1.0; // wake up simulation
       const zoomIntensity = 0.05;
       const mousePos = getMousePos(e);
       const zoomFactor = e.deltaY < 0 ? (1 + zoomIntensity) : (1 - zoomIntensity);
@@ -1468,6 +1465,7 @@ export default function App() {
 
     // Zoom Overlay Controls (Ref Bound Click Listeners)
     const handleZoomIn = () => {
+      alpha = 1.0; // wake up simulation
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
       const nextZoom = Math.min(8, zoom * 1.25);
@@ -1476,6 +1474,7 @@ export default function App() {
       zoom = nextZoom;
     };
     const handleZoomOut = () => {
+      alpha = 1.0; // wake up simulation
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
       const nextZoom = Math.max(0.1, zoom / 1.25);
@@ -1484,6 +1483,7 @@ export default function App() {
       zoom = nextZoom;
     };
     const handleZoomReset = () => {
+      alpha = 1.0; // wake up simulation
       zoom = graphMode === 'local' ? 1.0 : 0.6;
       pan = { x: canvas.width / 2, y: canvas.height / 2 };
     };
