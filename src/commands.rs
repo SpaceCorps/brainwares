@@ -555,12 +555,12 @@ Whenever a `.brainwares` vault directory is detected in the active workspace, th
 "#;
 
 const AGENT_RULES_CONTENT: &str = r#"# Brainwares Workspace Integration Rules
-
+ 
 This repository uses **Brainwares** (`bw`) for Obsidian-style markdown memory storage and code-reference hash tracking.
-
+ 
 You MUST follow these rules during your session:
 1. **Status Audit**: Before writing or changing code, run `bw status` to check if there are any outdated memory files or broken links.
-2. **Context Resolution**: Read relevant memories using `bw read <note_name>` or search memories with `bw query <term>` to gain full context about coding guidelines, system details, or database schemas.
+2. **Context Resolution**: Read relevant memories using `bw read <note_name>` or search memories with `bw query <term>` to gain full context. IMPORTANT: `bw query` performs a literal, case-insensitive substring match (it does NOT do semantic search or multi-word tokenized search). Do NOT query multi-word phrases (e.g., "input styling CSS border" will return 0 matches). Instead, search using single, simple keywords (e.g., `bw query "input"` or `bw query "border"`).
 3. **Reference Maintenance**: After modifying any code files in the codebase, run `bw status`. If any references are outdated, inspect the associated markdown note under `.brainwares/memories/`, update its contents to reflect the new codebase state, and run `bw update <note_name>` to synchronize the hashes. If you created any new source or configuration files, document them in a memory note (creating a new one if necessary) and run `bw link <note_name> <file_path>` to link and track them.
 4. **Clean State**: Keep the vault clean and verified before completing your task.
 "#;
