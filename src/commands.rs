@@ -745,3 +745,835 @@ pub fn handle_doctor() -> Result<(), String> {
     Ok(())
 }
 
+pub fn handle_ui(vault_path: &Path, port: u16) -> Result<(), String> {
+    let ui_dir = vault_path.join("ui");
+    let src_dir = ui_dir.join("src");
+    
+    if !ui_dir.exists() {
+        fs::create_dir_all(&ui_dir)
+            .map_err(|e| format!("Failed to create UI directory: {}", e))?;
+    }
+    if !src_dir.exists() {
+        fs::create_dir_all(&src_dir)
+            .map_err(|e| format!("Failed to create UI src directory: {}", e))?;
+    }
+
+    // 1. Write package.json
+    let package_json_content = r#"{
+  "name": "brainwares-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "marked": "^12.0.0",
+    "lucide-react": "^0.400.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^6.0.0",
+    "tailwindcss": "^4.0.0-beta.8",
+    "@tailwindcss/vite": "^4.0.0-beta.8"
+  }
+}"#;
+    fs::write(ui_dir.join("package.json"), package_json_content)
+        .map_err(|e| format!("Failed to write package.json: {}", e))?;
+
+    // 2. Write vite.config.js
+    let vite_config_content = r#"import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+  server: {
+    host: true
+  }
+})"#;
+    fs::write(ui_dir.join("vite.config.js"), vite_config_content)
+        .map_err(|e| format!("Failed to write vite.config.js: {}", e))?;
+
+    // 3. Write index.html
+    let index_html_content = r#"<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Brainwares Vault Explorer</title>
+    <style>
+      body {
+        margin: 0;
+        background-color: #09090b;
+        color: #f4f4f5;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>"#;
+    fs::write(ui_dir.join("index.html"), index_html_content)
+        .map_err(|e| format!("Failed to write index.html: {}", e))?;
+
+    // 4. Write src/index.css (including custom markdown styling classes)
+    let index_css_content = r#"@import "tailwindcss";
+
+.markdown-body {
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #d4d4d8;
+}
+.markdown-body h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #f4f4f5;
+  border-bottom: 1px solid #27272a;
+  padding-bottom: 0.5rem;
+}
+.markdown-body h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.75rem;
+  color: #e4e4e7;
+}
+.markdown-body h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: #e4e4e7;
+}
+.markdown-body p {
+  margin-bottom: 1rem;
+  line-height: 1.625;
+}
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.markdown-body li {
+  margin-bottom: 0.375rem;
+}
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background-color: #18181b;
+  color: #f43f5e;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+.markdown-body pre {
+  background-color: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+.markdown-body pre code {
+  background-color: transparent;
+  color: #e4e4e7;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.875rem;
+}
+.markdown-body blockquote {
+  border-left: 4px solid #6366f1;
+  padding-left: 1rem;
+  color: #a1a1aa;
+  font-style: italic;
+  margin-bottom: 1rem;
+}
+"#;
+    fs::write(src_dir.join("index.css"), index_css_content)
+        .map_err(|e| format!("Failed to write index.css: {}", e))?;
+
+    // 5. Write src/main.jsx
+    let main_jsx_content = r#"import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)"#;
+    fs::write(src_dir.join("main.jsx"), main_jsx_content)
+        .map_err(|e| format!("Failed to write main.jsx: {}", e))?;
+
+    // 6. Write src/App.jsx
+    let app_jsx_content = r##"import React, { useState, useEffect, useRef } from 'react';
+import { marked } from 'marked';
+import { 
+  BookOpen, Search, ShieldCheck, AlertCircle, RefreshCw, 
+  Tag, Link2, Share2, Compass, Network, FileCode, CheckCircle 
+} from 'lucide-react';
+import data from './data.json';
+
+const renderer = new marked.Renderer();
+const originalLink = renderer.link.bind(renderer);
+renderer.link = (href, title, text) => {
+  if (href.startsWith('wiki:')) {
+    const noteName = href.replace('wiki:', '');
+    return `<a href="#" class="wiki-link text-indigo-400 hover:text-indigo-300 font-semibold underline decoration-indigo-500/40" data-note="${noteName}">${text}</a>`;
+  }
+  return originalLink(href, title, text);
+};
+marked.setOptions({ renderer });
+
+export default function App() {
+  const [memories, setMemories] = useState(data.memories || []);
+  const [selectedNoteName, setSelectedNoteName] = useState('index');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTag, setSelectedTag] = useState(null);
+  const [viewMode, setViewMode] = useState('doc');
+  const canvasRef = useRef(null);
+
+  const preprocessMarkdown = (text) => {
+    return text.replace(/\[\[(.*?)\]\]/g, (match, note) => {
+      const parts = note.split('|');
+      const target = parts[0].trim();
+      const label = parts[1] ? parts[1].trim() : target;
+      const normTarget = target.toLowerCase().replace(/ /g, '-').replace(/_/g, '-');
+      return `[${label}](wiki:${normTarget})`;
+    });
+  };
+
+  const selectedNote = memories.find(m => m.name.toLowerCase() === selectedNoteName.toLowerCase()) 
+    || memories.find(m => m.name.toLowerCase() === 'index') 
+    || memories[0];
+
+  useEffect(() => {
+    if (selectedNote) {
+      setSelectedNoteName(selectedNote.name);
+    }
+  }, [selectedNote]);
+
+  const handleHtmlClick = (e) => {
+    const target = e.target.closest('[data-note]');
+    if (target) {
+      e.preventDefault();
+      const noteName = target.getAttribute('data-note');
+      setSelectedNoteName(noteName);
+    }
+  };
+
+  const allTags = Array.from(new Set(memories.flatMap(m => m.frontmatter.tags || [])));
+
+  const filteredNotes = memories.filter(m => {
+    const matchesSearch = searchQuery === '' || 
+      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (m.frontmatter.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.body.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesTag = !selectedTag || (m.frontmatter.tags || []).includes(selectedTag);
+    return matchesSearch && matchesTag;
+  });
+
+  useEffect(() => {
+    if (viewMode !== 'graph' || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    
+    const resizeCanvas = () => {
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight || 500;
+    };
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const nodes = memories.map((m, index) => {
+      const angle = (index / memories.length) * Math.PI * 2;
+      const radius = Math.min(canvas.width, canvas.height) * 0.3;
+      return {
+        id: m.name.toLowerCase(),
+        name: m.frontmatter.title || m.name,
+        x: canvas.width / 2 + Math.cos(angle) * radius,
+        y: canvas.height / 2 + Math.sin(angle) * radius,
+        vx: 0,
+        vy: 0,
+        radius: m.name.toLowerCase() === selectedNoteName.toLowerCase() ? 12 : 8,
+        isGlobal: m.file_path.includes('.config'),
+      };
+    });
+
+    const edges = [];
+    memories.forEach(m => {
+      const matches = m.body.match(/\[\[(.*?)\]\]/g) || [];
+      matches.forEach(match => {
+        const target = match.replace(/\[\[|\]\]/g, '').split('|')[0].trim()
+          .toLowerCase().replace(/ /g, '-').replace(/_/g, '-');
+        
+        if (nodes.some(n => n.id === target)) {
+          edges.push({
+            source: nodes.find(n => n.id === m.name.toLowerCase()),
+            target: nodes.find(n => n.id === target),
+          });
+        }
+      });
+    });
+
+    let animationId;
+    let draggedNode = null;
+
+    const step = () => {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const n1 = nodes[i];
+          const n2 = nodes[j];
+          const dx = n2.x - n1.x;
+          const dy = n2.y - n1.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          if (dist < 200) {
+            const force = (200 - dist) * 0.08;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            if (n1 !== draggedNode) { n1.vx -= fx; n1.vy -= fy; }
+            if (n2 !== draggedNode) { n2.vx += fx; n2.vy += fy; }
+          }
+        }
+      }
+
+      edges.forEach(edge => {
+        const n1 = edge.source;
+        const n2 = edge.target;
+        const dx = n2.x - n1.x;
+        const dy = n2.y - n1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = dist * 0.02;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        if (n1 !== draggedNode) { n1.vx += fx; n1.vy += fy; }
+        if (n2 !== draggedNode) { n2.vx -= fx; n2.vy -= fy; }
+      });
+
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      nodes.forEach(node => {
+        if (node === draggedNode) return;
+        const dx = cx - node.x;
+        const dy = cy - node.y;
+        node.vx += dx * 0.005;
+        node.vy += dy * 0.005;
+      });
+
+      nodes.forEach(node => {
+        if (node === draggedNode) return;
+        node.x += node.vx;
+        node.y += node.vy;
+        node.vx *= 0.85;
+        node.vy *= 0.85;
+        
+        node.x = Math.max(20, Math.min(canvas.width - 20, node.x));
+        node.y = Math.max(20, Math.min(canvas.height - 20, node.y));
+      });
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 1;
+      const gridSize = 40;
+      for (let x = 0; x < canvas.width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = '#3f3f46';
+      ctx.lineWidth = 1.5;
+      edges.forEach(edge => {
+        ctx.beginPath();
+        ctx.moveTo(edge.source.x, edge.source.y);
+        ctx.lineTo(edge.target.x, edge.target.y);
+        ctx.stroke();
+      });
+
+      nodes.forEach(node => {
+        const isCurrent = node.id === selectedNoteName.toLowerCase();
+        
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.radius + (isCurrent ? 6 : 4), 0, Math.PI * 2);
+        ctx.fillStyle = isCurrent ? 'rgba(99, 102, 241, 0.15)' : 'rgba(39, 39, 42, 0.4)';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+        
+        if (isCurrent) {
+          ctx.fillStyle = '#818cf8';
+        } else if (node.isGlobal) {
+          ctx.fillStyle = '#f97316';
+        } else {
+          ctx.fillStyle = '#6366f1';
+        }
+        ctx.fill();
+
+        ctx.font = isCurrent ? 'bold 12px sans-serif' : '11px sans-serif';
+        ctx.fillStyle = isCurrent ? '#f4f4f5' : '#a1a1aa';
+        ctx.textAlign = 'center';
+        ctx.fillText(node.name, node.x, node.y - node.radius - 8);
+      });
+
+      animationId = requestAnimationFrame(step);
+    };
+
+    const getMousePos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+    };
+
+    const handleMouseDown = (e) => {
+      const pos = getMousePos(e);
+      const clicked = nodes.find(node => {
+        const dx = node.x - pos.x;
+        const dy = node.y - pos.y;
+        return Math.sqrt(dx * dx + dy * dy) < node.radius + 10;
+      });
+
+      if (clicked) {
+        draggedNode = clicked;
+        setSelectedNoteName(clicked.id);
+      }
+    };
+
+    const handleMouseMove = (e) => {
+      if (!draggedNode) return;
+      const pos = getMousePos(e);
+      draggedNode.x = pos.x;
+      draggedNode.y = pos.y;
+    };
+
+    const handleMouseUp = () => {
+      draggedNode = null;
+    };
+
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    animationId = requestAnimationFrame(step);
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      window.removeEventListener('resize', resizeCanvas);
+      canvas.removeEventListener('mousedown', handleMouseDown);
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [viewMode, memories, selectedNoteName]);
+
+  const totalNotes = memories.length;
+  const globalNotesCount = memories.filter(m => m.file_path.includes('.config')).length;
+  const outdatedNotesCount = memories.filter(m => (m.frontmatter.references || []).some(r => r.status && r.status !== 'OK')).length;
+
+  return (
+    <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans">
+      <div className="w-80 border-r border-zinc-900 bg-zinc-900/20 backdrop-blur-xl flex flex-col h-full select-none">
+        <div className="p-5 border-b border-zinc-900 flex items-center space-x-3">
+          <div className="p-2 bg-indigo-600/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+            <Compass size={22} className="animate-pulse" />
+          </div>
+          <div>
+            <h1 className="text-md font-bold tracking-tight bg-gradient-to-r from-indigo-200 to-indigo-400 bg-clip-text text-transparent">
+              Brainwares Vault
+            </h1>
+            <p className="text-xs text-zinc-500 font-mono">CLI UI v0.1.0</p>
+          </div>
+        </div>
+
+        <div className="p-4 bg-zinc-900/40 border-b border-zinc-900 grid grid-cols-3 gap-2 text-center">
+          <div className="p-2 bg-zinc-950/40 rounded-lg border border-zinc-900">
+            <div className="text-xs text-zinc-500">Total</div>
+            <div className="text-lg font-bold font-mono text-zinc-200">{totalNotes}</div>
+          </div>
+          <div className="p-2 bg-zinc-950/40 rounded-lg border border-zinc-900">
+            <div className="text-xs text-zinc-500">Global</div>
+            <div className="text-lg font-bold font-mono text-orange-500">{globalNotesCount}</div>
+          </div>
+          <div className="p-2 bg-zinc-950/40 rounded-lg border border-zinc-900">
+            <div className="text-xs text-zinc-500">Outdated</div>
+            <div className="text-lg font-bold font-mono text-red-400">{outdatedNotesCount}</div>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 text-zinc-500" size={16} />
+            <input
+              type="text"
+              placeholder="Search memories..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-900 rounded-lg pl-9 pr-4 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-1 items-center py-1">
+            <button
+              onClick={() => setSelectedTag(null)}
+              className={`px-2 py-1 rounded text-xs transition-colors flex items-center space-x-1 ${!selectedTag ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/20' : 'bg-zinc-950 text-zinc-500 hover:text-zinc-300'}`}
+            >
+              <span>All</span>
+            </button>
+            {allTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                className={`px-2 py-1 rounded text-xs transition-colors flex items-center space-x-1 ${selectedTag === tag ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/20' : 'bg-zinc-950 text-zinc-500 hover:text-zinc-300'}`}
+              >
+                <Tag size={10} />
+                <span>{tag}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1">
+          {filteredNotes.map(m => {
+            const isCurrent = m.name.toLowerCase() === selectedNoteName.toLowerCase();
+            const isGlobal = m.file_path.includes('.config');
+            const hasOutdated = (m.frontmatter.references || []).some(r => r.status && r.status !== 'OK');
+
+            return (
+              <button
+                key={m.name}
+                onClick={() => setSelectedNoteName(m.name)}
+                className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex flex-col space-y-1 border ${isCurrent ? 'bg-indigo-600/10 border-indigo-500/40 text-indigo-200 shadow-lg shadow-indigo-500/5' : 'bg-transparent border-transparent hover:bg-zinc-900/40 hover:border-zinc-900 text-zinc-400 hover:text-zinc-200'}`}
+              >
+                <div className="flex justify-between items-start w-full">
+                  <span className="font-medium text-sm truncate">{m.frontmatter.title || m.name}</span>
+                  <div className="flex space-x-1 items-center flex-shrink-0">
+                    {isGlobal && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] bg-orange-950 border border-orange-500/20 text-orange-400 font-semibold font-mono">G</span>
+                    )}
+                    {hasOutdated && (
+                      <AlertCircle size={12} className="text-red-400" />
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-between items-center w-full text-[10px] text-zinc-600 font-mono">
+                  <span>[[{m.name}]]</span>
+                  {m.frontmatter.tags && m.frontmatter.tags.length > 0 && (
+                    <span className="truncate max-w-[120px]">#{m.frontmatter.tags[0]}</span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+
+          {filteredNotes.length === 0 && (
+            <div className="p-8 text-center text-xs text-zinc-600">
+              No matching memory notes.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col h-full bg-zinc-950 overflow-hidden relative">
+        <div className="h-16 border-b border-zinc-900 px-6 flex justify-between items-center bg-zinc-900/10 backdrop-blur-md z-10 select-none">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => setViewMode('doc')}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm transition-colors border ${viewMode === 'doc' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'}`}
+            >
+              <BookOpen size={16} />
+              <span>Document</span>
+            </button>
+            <button
+              onClick={() => setViewMode('graph')}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm transition-colors border ${viewMode === 'graph' ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-transparent border-transparent text-zinc-500 hover:text-zinc-300'}`}
+            >
+              <Network size={16} />
+              <span>Visualizer</span>
+            </button>
+          </div>
+
+          <div className="text-xs text-zinc-500 font-mono flex items-center space-x-2">
+            <span>Workspace:</span>
+            <span className="text-zinc-300 bg-zinc-900 px-2 py-1 rounded border border-zinc-800 truncate max-w-xs">
+              {data.vault_path}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-hidden relative">
+          {viewMode === 'doc' ? (
+            <div className="flex h-full overflow-hidden">
+              <div className="flex-1 overflow-y-auto px-10 py-8">
+                {selectedNote ? (
+                  <article className="max-w-3xl mx-auto prose prose-invert prose-indigo">
+                    <div className="mb-8 border-b border-zinc-900 pb-6">
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {(selectedNote.frontmatter.tags || []).map(t => (
+                          <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center space-x-1">
+                            <Tag size={10} />
+                            <span>{t}</span>
+                          </span>
+                        ))}
+                        {selectedNote.file_path.includes('.config') && (
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-orange-950 border border-orange-500/20 text-orange-400 font-semibold font-mono">
+                            Global User Preference
+                          </span>
+                        )}
+                      </div>
+
+                      <h1 className="text-3xl font-bold tracking-tight text-zinc-100 mb-2">
+                        {selectedNote.frontmatter.title || selectedNote.name}
+                      </h1>
+                      
+                      <div className="text-xs text-zinc-500 font-mono">
+                        Last Updated: {selectedNote.frontmatter.last_updated || 'Unknown'}
+                      </div>
+                    </div>
+
+                    <div 
+                      onClick={handleHtmlClick}
+                      className="markdown-body text-zinc-300 leading-relaxed space-y-4"
+                      dangerouslySetInnerHTML={{ __html: marked.parse(preprocessMarkdown(selectedNote.body)) }}
+                    />
+                  </article>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-zinc-500">
+                    No note selected. Select a note from the sidebar.
+                  </div>
+                )}
+              </div>
+
+              <div className="w-80 border-l border-zinc-900 bg-zinc-900/10 flex flex-col overflow-y-auto p-6 space-y-6">
+                {selectedNote && (
+                  <>
+                    <div className="space-y-3">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center space-x-2">
+                        <FileCode size={14} />
+                        <span>Code References</span>
+                      </h3>
+                      
+                      <div className="space-y-2">
+                        {selectedNote.frontmatter.references && selectedNote.frontmatter.references.length > 0 ? (
+                          selectedNote.frontmatter.references.map(ref => {
+                            const isOk = ref.status === 'OK';
+                            return (
+                              <div key={ref.file_path} className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-xl flex items-center justify-between">
+                                <div className="min-w-0 flex-1 pr-2">
+                                  <div className="text-xs font-mono truncate text-zinc-300" title={ref.file_path}>
+                                    {ref.file_path.split('/').pop()}
+                                  </div>
+                                  <div className="text-[10px] text-zinc-600 truncate">{ref.file_path}</div>
+                                </div>
+                                <div className="flex-shrink-0">
+                                  {isOk ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-950 border border-emerald-500/20 text-emerald-400 font-medium flex items-center space-x-1">
+                                      <CheckCircle size={10} />
+                                      <span>OK</span>
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-red-950 border border-red-500/20 text-red-400 font-medium flex items-center space-x-1">
+                                      <AlertCircle size={10} />
+                                      <span>Outdated</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="text-xs text-zinc-600 italic">No code references linked to this note.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center space-x-2">
+                        <Link2 size={14} />
+                        <span>Backlinks</span>
+                      </h3>
+
+                      <div className="space-y-2">
+                        {selectedNote.backlinks && selectedNote.backlinks.length > 0 ? (
+                          selectedNote.backlinks.map(bl => (
+                            <button
+                              key={bl.source}
+                              onClick={() => setSelectedNoteName(bl.source)}
+                              className="w-full text-left p-3 bg-zinc-900/40 hover:bg-zinc-900/70 border border-zinc-900 hover:border-zinc-800 rounded-xl transition-all duration-200 flex flex-col space-y-1"
+                            >
+                              <div className="text-xs font-semibold text-zinc-300">
+                                {bl.source}
+                              </div>
+                              <div className="text-[10px] text-zinc-500 italic truncate">
+                                "{bl.context_line}"
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="text-xs text-zinc-600 italic">No incoming links to this note.</div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="w-full h-full relative overflow-hidden bg-zinc-950">
+              <canvas ref={canvasRef} className="block w-full h-full cursor-grab active:cursor-grabbing" />
+              
+              <div className="absolute bottom-6 left-6 p-4 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-xl text-xs space-y-2 select-none text-zinc-300">
+                <h4 className="font-bold text-zinc-200 mb-1">Legend</h4>
+                <div className="flex items-center space-x-2">
+                  <span className="w-3 h-3 rounded-full bg-indigo-400" />
+                  <span>Current Node</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="w-3 h-3 rounded-full bg-indigo-500" />
+                  <span>Local Memory</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="w-3 h-3 rounded-full bg-orange-500" />
+                  <span>Global Preference</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}"##;
+    fs::write(src_dir.join("App.jsx"), app_jsx_content)
+        .map_err(|e| format!("Failed to write App.jsx: {}", e))?;
+
+    // 7. Compile memories and generate src/data.json
+    let memories = load_memories(vault_path)?;
+    let workspace_root = get_workspace_root(vault_path);
+    let backlinks_map = get_backlinks(&memories);
+    
+    let mut memories_json = Vec::new();
+    for page in &memories {
+        let normalized_name = crate::vault::normalize_memory_name(&page.name);
+        let backlinks = backlinks_map.get(&normalized_name).cloned().unwrap_or_default();
+        
+        let mut refs_json = Vec::new();
+        if let Some(refs) = &page.frontmatter.references {
+            for code_ref in refs {
+                let code_file_path = workspace_root.join(&code_ref.path);
+                let status = if !code_file_path.exists() {
+                    "Missing"
+                } else {
+                    match calculate_file_hash(&code_file_path) {
+                        Ok(current_hash) => {
+                            if current_hash == code_ref.hash {
+                                "OK"
+                            } else {
+                                "Outdated"
+                            }
+                        }
+                        Err(_) => "Missing"
+                    }
+                };
+                
+                refs_json.push(serde_json::json!({
+                    "file_path": code_ref.path,
+                    "status": status,
+                }));
+            }
+        }
+        
+        memories_json.push(serde_json::json!({
+            "name": page.name,
+            "file_path": page.file_path.to_string_lossy(),
+            "frontmatter": {
+                "title": page.frontmatter.title,
+                "tags": page.frontmatter.tags,
+                "last_updated": page.frontmatter.last_updated,
+                "references": refs_json,
+            },
+            "body": page.body,
+            "backlinks": backlinks.iter().map(|bl| serde_json::json!({
+                "source": bl.source_name,
+                "context_line": bl.context,
+            })).collect::<Vec<_>>(),
+        }));
+    }
+    
+    let data_json = serde_json::json!({
+        "vault_path": vault_path.to_string_lossy(),
+        "memories": memories_json,
+    });
+    
+    let serialized_data = serde_json::to_string_pretty(&data_json)
+        .map_err(|e| format!("Failed to serialize data.json: {}", e))?;
+    fs::write(src_dir.join("data.json"), serialized_data)
+        .map_err(|e| format!("Failed to write data.json: {}", e))?;
+
+    // 8. Run Installation
+    let node_modules_path = ui_dir.join("node_modules");
+    if !node_modules_path.exists() {
+        println!("Installing web interface dependencies (this may take a few seconds)...");
+        let install_status = std::process::Command::new("vp")
+            .arg("install")
+            .current_dir(&ui_dir)
+            .status();
+        if install_status.is_err() || !install_status.unwrap().success() {
+            println!("WARNING: Failed to run 'vp install'. Trying fallback 'pnpm install'...");
+            let _ = std::process::Command::new("pnpm")
+                .arg("install")
+                .current_dir(&ui_dir)
+                .status();
+        }
+    }
+
+    // 9. Start local Dev Server
+    println!("Starting Brainwares visual explorer on http://localhost:{} ...", port);
+    let dev_status = std::process::Command::new("vp")
+        .arg("dev")
+        .arg("--port")
+        .arg(port.to_string())
+        .current_dir(&ui_dir)
+        .status();
+    
+    if dev_status.is_err() || !dev_status.unwrap().success() {
+        println!("WARNING: Failed to run 'vp dev'. Trying fallback 'npx vite --port {}'...", port);
+        let _ = std::process::Command::new("npx")
+            .arg("vite")
+            .arg("--port")
+            .arg(port.to_string())
+            .current_dir(&ui_dir)
+            .status();
+    }
+
+    Ok(())
+}
+
+

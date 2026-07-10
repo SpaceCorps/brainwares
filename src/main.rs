@@ -105,6 +105,16 @@ fn main() {
         }
         Commands::Integrate => commands::handle_integrate(),
         Commands::Doctor => commands::handle_doctor(),
+        Commands::Ui { port } => {
+            if !vault_path.is_dir() {
+                Err(format!(
+                    "Vault directory {:?} does not exist. Initialize it first using 'bw init'.",
+                    vault_path
+                ))
+            } else {
+                commands::handle_ui(&vault_path, port)
+            }
+        }
     };
 
     if let Err(e) = result {
