@@ -1674,4 +1674,194 @@ export default function App() {
     Ok(())
 }
 
+pub fn handle_index(vault_path: &Path) -> Result<(), String> {
+    let workspace_root = get_workspace_root(vault_path);
+    let merged_config = crate::vault::load_merged_config(vault_path);
+    let memories_dir = vault_path.join("memories");
+    
+    println!("Indexing codebase under workspace: {:?}", workspace_root);
+    
+    // Read the entries in the workspace root directory
+    let entries = fs::read_dir(&workspace_root)
+        .map_err(|e| format!("Failed to read workspace root: {}", e))?;
+        
+    let mut scaffolded_count = 0;
+    
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let path = entry.path();
+        
+        // We only index directories at the top level
+        if !path.is_dir() {
+            continue;
+        }
+        
+        // Skip hidden directories (starting with '.')
+        let dir_name = match path.file_name() {
+            Some(n) => n.to_string_lossy().to_string(),
+            None => continue,
+        };
+        if dir_name.starts_with('.') {
+            continue;
+        }
+        
+        // Check if the directory is ignored in our configuration
+        if is_path_ignored(&path, &merged_config) {
+            continue;
+        }
+        
+        // We found a top-level directory!
+        // Humanize the title (capitalize it)
+        let title = humanize_title(&dir_name);
+        let memory_name = crate::vault::normalize_memory_name(&dir_name);
+        let note_path = memories_dir.join(format!("{}.md", memory_name));
+        
+        // If the memory file already exists, don't overwrite it
+        if note_path.exists() {
+            println!("Note [[{}]] already exists, skipping.", memory_name);
+            continue;
+        }
+        
+        // Scan files inside this directory (up to 5 key files)
+        let mut references = Vec::new();
+        scan_key_files_in_dir(&path, &workspace_root, &merged_config, &mut references);
+        
+        // Build frontmatter
+        let frontmatter = crate::models::Frontmatter {
+            title: Some(title.clone()),
+            tags: Some(vec!["folder".to_string(), "index".to_string()]),
+            references: if references.is_empty() { None } else { Some(references.clone()) },
+            last_updated: Some(chrono::Utc::now().to_rfc3339()),
+        };
+        
+        // Build markdown body
+        let mut body = format!("# {}\n\nScaffolded memory page for the `{}` directory.\n\n", title, dir_name);
+        if !references.is_empty() {
+            body.push_str("## Core Files Reference Map\n\n");
+            for ref_item in &references {
+                let file_name = Path::new(&ref_item.path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| ref_item.path.clone());
+                body.push_str(&format!("*   `{}`: [Enter description for file's role in this folder]\n", file_name));
+            }
+        }
+        
+        let memory_page = crate::models::MemoryPage {
+            name: memory_name.clone(),
+            frontmatter,
+            body,
+            file_path: note_path.clone(),
+        };
+        
+        // Write the note to file
+        let serialized = serialize_memory_file(&memory_page)?;
+        fs::write(&memory_page.file_path, serialized)
+            .map_err(|e| format!("Failed to write memory note: {}", e))?;
+            
+        println!("SUCCESS: Created memory page [[{}]] referencing {} files.", memory_name, references.len());
+        scaffolded_count += 1;
+    }
+    
+    println!("------------------------------------------------");
+    println!("Indexing completed. Created {} new memory notes.", scaffolded_count);
+    Ok(())
+}
+
+fn is_path_ignored(path: &Path, config: &crate::models::Config) -> bool {
+    let path_str = path.to_string_lossy().to_string();
+    for pattern in &config.ignore_patterns {
+        let pattern_clean = pattern.trim_start_matches("**/").trim_end_matches('/');
+        if pattern_clean.is_empty() {
+            continue;
+        }
+        if path.components().any(|c| c.as_os_str().to_string_lossy() == pattern_clean) {
+            return true;
+        }
+        if path_str.contains(pattern_clean) {
+            return true;
+        }
+    }
+    false
+}
+
+fn humanize_title(name: &str) -> String {
+    name.split(&['_', '-'])
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn scan_key_files_in_dir(
+    dir_path: &Path,
+    workspace_root: &Path,
+    config: &crate::models::Config,
+    references: &mut Vec<crate::models::CodeReference>,
+) {
+    let walker = walkdir::WalkDir::new(dir_path)
+        .into_iter()
+        .filter_entry(|e| {
+            let path = e.path();
+            if is_path_ignored(path, config) {
+                return false;
+            }
+            if let Some(name) = path.file_name() {
+                if name.to_string_lossy().starts_with('.') {
+                    return false;
+                }
+            }
+            true
+        });
+        
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        
+        if !path.is_file() {
+            continue;
+        }
+        
+        if is_path_ignored(path, config) {
+            continue;
+        }
+        
+        // Skip common binary extensions to avoid clutter
+        if let Some(ext) = path.extension() {
+            let ext_str = ext.to_string_lossy().to_lowercase();
+            let skip_exts = ["png", "jpg", "jpeg", "gif", "ico", "svg", "lock", "db", "bin", "exe", "wasm", "node_modules"];
+            if skip_exts.contains(&ext_str.as_str()) {
+                continue;
+            }
+        }
+        
+        let rel_path = match path.strip_prefix(workspace_root) {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
+        
+        let hash = match crate::hash::calculate_file_hash(path) {
+            Ok(h) => h,
+            Err(_) => continue,
+        };
+        
+        references.push(crate::models::CodeReference {
+            path: rel_path,
+            hash,
+        });
+        
+        if references.len() >= 5 {
+            break;
+        }
+    }
+}
+
 

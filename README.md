@@ -89,6 +89,7 @@ Move the compiled binary `target/release/brainwares` (or `bw`) into your system'
 | `bw integrate` | None | Configure global Antigravity coding agent custom rules to natively interact with brainwares. |
 | `bw doctor` | None | Audit the system installation (checks PATH, global agent rules, and local workspace). |
 | `bw ui` | `[--port <port>]` | Spin up a Vite+ minimalistic web dashboard to explore and visualize your memories and backlinks. |
+| `bw index` | None | Scan top-level workspace directories and bootstrap a markdown memory note for each, linking key files. |
 
 ---
 
