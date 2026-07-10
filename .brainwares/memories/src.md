@@ -4,7 +4,7 @@ references:
 - path: src/models.rs
   hash: 3e4520b4d8c1a579f27c3946709f540dfffe58a3a24b49835e59614d8ae5fb49
 - path: src/commands.rs
-  hash: dad34c397b1a5e5413033022ff6a6f2b810767531200a57f713294632f2f6434
+  hash: d1ba45420cfbcd5fa4448635bdf551de6a0c5a6ae9096c651f48c508456568ec
 - path: src/main.rs
   hash: 3e87c84fb656903f530edde0333feb2fe304a433948615cd6c4ebca9f9e22abc
 - path: src/parser.rs
@@ -20,7 +20,7 @@ references:
 tags:
 - folder
 - index
-last_updated: 2026-07-10T12:50:22.194497+00:00
+last_updated: 2026-07-10T12:54:28.329626+00:00
 ---
 
 # Src

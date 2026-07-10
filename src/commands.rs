@@ -1033,6 +1033,7 @@ export default function App() {
   const [selectedTag, setSelectedTag] = useState(null);
   const [viewMode, setViewMode] = useState('doc');
   const [graphMode, setGraphMode] = useState(data.memories && data.memories.length > 150 ? 'local' : 'global');
+  const [maxDepth, setMaxDepth] = useState(3);
   const canvasRef = useRef(null);
   const zoomInButtonRef = useRef(null);
   const zoomOutButtonRef = useRef(null);
@@ -1165,8 +1166,13 @@ export default function App() {
     };
 
     const assignRadialLayout = (node, startAngle, endAngle, depth) => {
-      const radialStep = 280; // Expanded step (280px separation) to give outer circles breathing room
-      const radius = depth * radialStep;
+      const radialStep = 240; // Base separation step
+      
+      // Proximity to main node expansion: more descendants under this node -> push it further out!
+      // This increases the circumference space for dense branches to spread out.
+      const subtreeLeaves = countLeaves(node);
+      const leavesOffset = subtreeLeaves > 1 ? Math.sqrt(subtreeLeaves) * 45 : 0;
+      const radius = depth * radialStep + leavesOffset;
       const midAngle = (startAngle + endAngle) / 2;
       
       if (node.node) {
@@ -1528,7 +1534,7 @@ export default function App() {
       if (zoomOutBtn) zoomOutBtn.removeEventListener('click', handleZoomOut);
       if (zoomResetBtn) zoomResetBtn.removeEventListener('click', handleZoomReset);
     };
-  }, [viewMode, memories, graphMode]);
+  }, [viewMode, memories, graphMode, maxDepth]);
 
   const totalNotes = memories.length;
   const globalNotesCount = memories.filter(m => m && (m.file_path || '').includes('.config')).length;
@@ -1785,6 +1791,27 @@ export default function App() {
             <div className="w-full h-full relative overflow-hidden bg-zinc-950">
               <canvas ref={canvasRef} className="block w-full h-full cursor-grab active:cursor-grabbing" />
               
+              {graphMode === 'global' && (
+                <div className="absolute top-6 left-6 p-1 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-xl flex items-center space-x-1 select-none z-20 text-xs text-zinc-400 px-3 py-1.5">
+                  <span className="font-semibold mr-2">Folder Depth:</span>
+                  {[1, 2, 3, 4].map(d => (
+                    <button
+                      key={d}
+                      onClick={() => setMaxDepth(d)}
+                      className={`w-6 h-6 rounded flex items-center justify-center font-bold font-mono transition-colors ${maxDepth === d ? 'bg-indigo-600 text-zinc-100 shadow' : 'bg-transparent hover:text-zinc-200'}`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setMaxDepth(99)}
+                    className={`px-2 h-6 rounded flex items-center justify-center font-bold transition-colors ${maxDepth === 99 ? 'bg-indigo-600 text-zinc-100 shadow' : 'bg-transparent hover:text-zinc-200'}`}
+                  >
+                    All
+                  </button>
+                </div>
+              )}
+
               <div className="absolute top-6 right-6 p-1 bg-zinc-900/80 backdrop-blur-md border border-zinc-800 rounded-xl flex items-center space-x-1 select-none z-20">
                 <button
                   onClick={() => setGraphMode('local')}
