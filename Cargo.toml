@@ -12,3 +12,11 @@ sha2 = "0.10"
 walkdir = "2.4"
 regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
+
+[[bin]]
+name = "bw"
+path = "src/main.rs"
+
+[[bin]]
+name = "brainwares"
+path = "src/main.rs"
