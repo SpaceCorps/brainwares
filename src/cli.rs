@@ -72,4 +72,10 @@ pub enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, help = "Additional arguments to forward to the program template")]
         args: Vec<String>,
     },
+
+    #[command(about = "Integrate Brainwares with global Antigravity coding agent configuration")]
+    Integrate,
+
+    #[command(about = "Verify that Brainwares CLI and agent integrations are set up correctly")]
+    Doctor,
 }

@@ -494,3 +494,118 @@ pub fn handle_compile(vault_path: &Path, program: String, args: Vec<String>) -> 
     println!("{}", compiled_prompt);
     Ok(())
 }
+
+const GLOBAL_RULES_CONTENT: &str = r#"# Antigravity Global Rules
+
+## Brainwares Workspace Integration
+
+Whenever a `.brainwares` vault directory is detected in the active workspace, the agent MUST automatically hook up with it:
+
+1. **Context Discovery**:
+   - Before executing tasks, check for the presence of a `.brainwares/` folder.
+   - If present, run `bw status` to scan for any outdated references or broken wiki-links.
+   - Automatically load and read relevant memories using `bw read <note_name>` or `bw query <term>` to gain full context about coding guidelines, rules, or system details.
+
+2. **Reference Maintenance & Reflection**:
+   - After completing edits on any codebase files, run `bw status` to see if your changes caused any memory notes to become outdated.
+   - If references are outdated, inspect the associated markdown memory file, update its content to reflect the new codebase state, and run `bw update <note_name>` to synchronize the hashes.
+   - Keep the vault clean and green before completing your turn.
+"#;
+
+pub fn handle_integrate() -> Result<(), String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not find home directory environment variable (HOME or USERPROFILE)".to_string())?;
+    
+    let gemini_config_dir = PathBuf::from(home).join(".gemini").join("config");
+    if !gemini_config_dir.exists() {
+        fs::create_dir_all(&gemini_config_dir)
+            .map_err(|e| format!("Failed to create Gemini config directory at {:?}: {}", gemini_config_dir, e))?;
+    }
+
+    let agents_md_path = gemini_config_dir.join("AGENTS.md");
+    let mut current_content = String::new();
+    if agents_md_path.is_file() {
+        current_content = fs::read_to_string(&agents_md_path)
+            .map_err(|e| format!("Failed to read existing AGENTS.md: {}", e))?;
+    }
+
+    if current_content.contains("Brainwares Workspace Integration") {
+        println!("INFO: Brainwares integration already configured in global AGENTS.md.");
+        return Ok(());
+    }
+
+    let separator = if current_content.is_empty() || current_content.ends_with('\n') { "" } else { "\n\n" };
+    let new_content = format!("{}{}{}", current_content, separator, GLOBAL_RULES_CONTENT);
+    
+    fs::write(&agents_md_path, new_content)
+        .map_err(|e| format!("Failed to write global AGENTS.md file: {}", e))?;
+
+    println!("SUCCESS: Global Antigravity rules configured successfully at {:?}", agents_md_path);
+    Ok(())
+}
+
+pub fn handle_doctor() -> Result<(), String> {
+    println!("Checking Brainwares system configuration...");
+    println!("------------------------------------------------");
+
+    // 1. Check PATH executable
+    let mut bw_ok = std::process::Command::new("bw")
+        .arg("--help")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok();
+
+    if !bw_ok {
+        // Try fallback to brainwares
+        bw_ok = std::process::Command::new("brainwares")
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok();
+    }
+
+    if bw_ok {
+        println!("[✓] Brainwares CLI binary is executable and in your PATH.");
+    } else {
+        println!("[✗] Brainwares CLI binary was not found in PATH.");
+        println!("    -> To fix this, run: cargo install --path .");
+    }
+
+    // 2. Check Agent Integration
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_default();
+    
+    let agents_md_path = PathBuf::from(&home).join(".gemini").join("config").join("AGENTS.md");
+    let mut integration_ok = false;
+    if agents_md_path.is_file() {
+        if let Ok(content) = fs::read_to_string(&agents_md_path) {
+            if content.contains("Brainwares Workspace Integration") {
+                integration_ok = true;
+            }
+        }
+    }
+
+    if integration_ok {
+        println!("[✓] Antigravity Global Agent rules are configured at {:?}", agents_md_path);
+    } else {
+        println!("[✗] Antigravity Global Agent rules are NOT configured.");
+        println!("    -> To fix this, run: bw integrate");
+    }
+
+    // 3. Check Workspace initialization
+    let local_vault = PathBuf::from(".brainwares");
+    if local_vault.is_dir() {
+        println!("[✓] Local workspace has a .brainwares vault initialized.");
+    } else {
+        println!("[ ] Local workspace does not have a .brainwares vault initialized (optional).");
+        println!("    -> Run 'bw init' to bootstrap a vault in this project.");
+    }
+
+    println!("------------------------------------------------");
+    Ok(())
+}
+

@@ -101,6 +101,8 @@ fn main() {
                 commands::handle_compile(&vault_path, program, args)
             }
         }
+        Commands::Integrate => commands::handle_integrate(),
+        Commands::Doctor => commands::handle_doctor(),
     };
 
     if let Err(e) = result {
