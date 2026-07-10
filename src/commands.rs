@@ -850,6 +850,11 @@ pub fn handle_ui(vault_path: &Path, port: u16) -> Result<(), String> {
     fs::write(ui_dir.join("package.json"), package_json_content)
         .map_err(|e| format!("Failed to write package.json: {}", e))?;
 
+    // 1.5 Write .npmrc to isolate pnpm installations from parent workspaces
+    let npmrc_content = "shared-workspace-lockfile=false\nlink-workspace-packages=false\n";
+    fs::write(ui_dir.join(".npmrc"), npmrc_content)
+        .map_err(|e| format!("Failed to write .npmrc: {}", e))?;
+
     // 2. Write vite.config.js
     let vite_config_content = r#"import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
