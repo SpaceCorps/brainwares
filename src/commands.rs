@@ -1081,7 +1081,10 @@ export default function App() {
       canvas.height = canvas.parentElement.clientHeight || 500;
     };
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+      triggerRedraw();
+    });
 
     // Pan & Zoom values kept in animation closure for high performance (60fps with zero React state overhead)
     let zoom = graphMode === 'local' ? 1.0 : 0.6; // start slightly zoomed out in global mode
@@ -1247,75 +1250,124 @@ export default function App() {
     }
 
     let animationId;
+    let needsRedraw = true; // State tracking for dirty render strategy
+
+    const triggerRedraw = () => {
+      needsRedraw = true;
+    };
 
     const step = () => {
-      // Just clear and render! No physics velocity math = 0% CPU overhead
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (needsRedraw) {
+        needsRedraw = false;
 
-      ctx.save();
-      ctx.translate(pan.x, pan.y);
-      ctx.scale(zoom, zoom);
+        // Clear canvas context
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Grid background drawn dynamically in visible bounding box
-      ctx.strokeStyle = '#18181b';
-      ctx.lineWidth = 1 / zoom;
-      const gridSize = 40;
-      const startX = Math.floor((-pan.x) / (gridSize * zoom)) * gridSize - gridSize;
-      const endX = startX + Math.ceil(canvas.width / (gridSize * zoom)) * gridSize + gridSize * 2;
-      const startY = Math.floor((-pan.y) / (gridSize * zoom)) * gridSize - gridSize;
-      const endY = startY + Math.ceil(canvas.height / (gridSize * zoom)) * gridSize + gridSize * 2;
+        ctx.save();
+        ctx.translate(pan.x, pan.y);
+        ctx.scale(zoom, zoom);
 
-      for (let x = startX; x < endX; x += gridSize) {
+        // 1. Frustum Bounding Box Calculation for dynamic screen space clipping (huge performance win)
+        const pad = 80;
+        const viewLeft = -pan.x / zoom - pad;
+        const viewRight = (canvas.width - pan.x) / zoom + pad;
+        const viewTop = -pan.y / zoom - pad;
+        const viewBottom = (canvas.height - pan.y) / zoom + pad;
+
+        // 2. Grid background drawn dynamically in visible bounding box
+        ctx.strokeStyle = '#18181b';
+        ctx.lineWidth = 1 / zoom;
+        const gridSize = 40;
+        const startX = Math.floor(viewLeft / gridSize) * gridSize;
+        const endX = Math.ceil(viewRight / gridSize) * gridSize;
+        const startY = Math.floor(viewTop / gridSize) * gridSize;
+        const endY = Math.ceil(viewBottom / gridSize) * gridSize;
+
         ctx.beginPath();
-        ctx.moveTo(x, startY);
-        ctx.lineTo(x, endY);
-        ctx.stroke();
-      }
-      for (let y = startY; y < endY; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(startX, y);
-        ctx.lineTo(endX, y);
-        ctx.stroke();
-      }
-
-      const activeId = selectedNoteNameRef.current.toLowerCase();
-
-      // Draw edges
-      activeEdges.forEach(edge => {
-        const isConnectedToSelected = activeId && (
-          edge.source.id === activeId || 
-          edge.target.id === activeId
-        );
-        const isConnectedToHovered = hoveredNode && (
-          edge.source.id === hoveredNode.id ||
-          edge.target.id === hoveredNode.id
-        );
-        
-        ctx.beginPath();
-        ctx.moveTo(edge.source.x, edge.source.y);
-        ctx.lineTo(edge.target.x, edge.target.y);
-        
-        if (isConnectedToSelected) {
-          ctx.strokeStyle = '#818cf8'; // Glowing indigo edge for active connections
-          ctx.lineWidth = 2.5 / zoom;
-        } else if (isConnectedToHovered) {
-          ctx.strokeStyle = '#a5b4fc'; // Soft indigo edge for hovered connections
-          ctx.lineWidth = 2 / zoom;
-        } else {
-          ctx.strokeStyle = '#27272a'; // Faint gray edge for other connections
-          ctx.lineWidth = 1 / zoom;
+        for (let x = startX; x <= endX; x += gridSize) {
+          ctx.moveTo(x, startY);
+          ctx.lineTo(x, endY);
+        }
+        for (let y = startY; y <= endY; y += gridSize) {
+          ctx.moveTo(startX, y);
+          ctx.lineTo(endX, y);
         }
         ctx.stroke();
-      });
 
-      // Draw nodes
-      activeNodes.forEach(node => {
-        const isCurrent = node.id === activeId;
-        const isHovered = hoveredNode && node.id === hoveredNode.id;
-        
-        // Find top-level segment for branch color-coding
-        const firstSegment = node.id === 'index' ? 'index' : node.id.split('-')[0];
-        
+        const activeId = selectedNoteNameRef.current.toLowerCase();
+
+        // Filter and clip visible edges / nodes for viewport culling
+        const visibleNodes = activeNodes.filter(node => 
+          node.x >= viewLeft && node.x <= viewRight && 
+          node.y >= viewTop && node.y <= viewBottom
+        );
+
+        // 3. Batched Draw Calls for Edges (Reduces web draw calls from 3,000 to exactly 3!)
+        // Pass 1: Standard faint gray edges
+        ctx.beginPath();
+        ctx.strokeStyle = '#27272a';
+        ctx.lineWidth = 1 / zoom;
+        activeEdges.forEach(edge => {
+          // Viewport clipping: draw edge only if at least one node is visible
+          const isVisible = (edge.source.x >= viewLeft && edge.source.x <= viewRight && edge.source.y >= viewTop && edge.source.y <= viewBottom) ||
+                            (edge.target.x >= viewLeft && edge.target.x <= viewRight && edge.target.y >= viewTop && edge.target.y <= viewBottom);
+          if (!isVisible) return;
+
+          const isConnectedToSelected = activeId && (
+            edge.source.id === activeId || 
+            edge.target.id === activeId
+          );
+          const isConnectedToHovered = hoveredNode && (
+            edge.source.id === hoveredNode.id ||
+            edge.target.id === hoveredNode.id
+          );
+
+          if (!isConnectedToSelected && !isConnectedToHovered) {
+            ctx.moveTo(edge.source.x, edge.source.y);
+            ctx.lineTo(edge.target.x, edge.target.y);
+          }
+        });
+        ctx.stroke();
+
+        // Pass 2: Hovered edge connections
+        ctx.beginPath();
+        ctx.strokeStyle = '#a5b4fc';
+        ctx.lineWidth = 2 / zoom;
+        activeEdges.forEach(edge => {
+          const isConnectedToSelected = activeId && (
+            edge.source.id === activeId || 
+            edge.target.id === activeId
+          );
+          const isConnectedToHovered = hoveredNode && (
+            edge.source.id === hoveredNode.id ||
+            edge.target.id === hoveredNode.id
+          );
+
+          if (isConnectedToHovered && !isConnectedToSelected) {
+            ctx.moveTo(edge.source.x, edge.source.y);
+            ctx.lineTo(edge.target.x, edge.target.y);
+          }
+        });
+        ctx.stroke();
+
+        // Pass 3: Active selected edge connections
+        ctx.beginPath();
+        ctx.strokeStyle = '#818cf8';
+        ctx.lineWidth = 2.5 / zoom;
+        activeEdges.forEach(edge => {
+          const isConnectedToSelected = activeId && (
+            edge.source.id === activeId || 
+            edge.target.id === activeId
+          );
+
+          if (isConnectedToSelected) {
+            ctx.moveTo(edge.source.x, edge.source.y);
+            ctx.lineTo(edge.target.x, edge.target.y);
+          }
+        });
+        ctx.stroke();
+
+        // 4. Batch drawing nodes to prevent styling canvas context switches
         const branchColors = {
           'index': '#e2e8f0', // Zinc white for index root
           'ivy': '#38bdf8', // Light blue
@@ -1339,55 +1391,109 @@ export default function App() {
             .map(n => n.id === 'index' ? 'index' : n.id.split('-')[0])
             .filter(s => s !== 'index')
         ));
-        
-        const segmentIndex = activeTopSegments.indexOf(firstSegment);
-        const nodeColor = firstSegment === 'index' 
-          ? '#e2e8f0' 
-          : (branchColors[firstSegment] || palette[segmentIndex % palette.length]);
 
-        // Draw hover glow ring
+        // Group nodes by colors for grouped batch fills
+        const nodesByColor = {};
+        visibleNodes.forEach(node => {
+          const isCurrent = node.id === activeId;
+          const isHovered = hoveredNode && node.id === hoveredNode.id;
+          if (isCurrent || isHovered) return; // Draw interacting nodes separately with stroke
+
+          const firstSegment = node.id === 'index' ? 'index' : node.id.split('-')[0];
+          const segmentIndex = activeTopSegments.indexOf(firstSegment);
+          const nodeColor = firstSegment === 'index' 
+            ? '#e2e8f0' 
+            : (branchColors[firstSegment] || palette[segmentIndex % palette.length]);
+
+          if (!nodesByColor[nodeColor]) {
+            nodesByColor[nodeColor] = [];
+          }
+          nodesByColor[nodeColor].push(node);
+        });
+
+        // Group 1: Zinc background shadows for all visible nodes
         ctx.beginPath();
-        const displayRadius = node.radius + (isCurrent ? 6 : (isHovered ? 5 : 4));
-        ctx.arc(node.x, node.y, displayRadius, 0, Math.PI * 2);
-        ctx.fillStyle = isCurrent ? 'rgba(99, 102, 241, 0.25)' : (isHovered ? 'rgba(165, 180, 252, 0.2)' : 'rgba(39, 39, 42, 0.2)');
+        ctx.fillStyle = 'rgba(39, 39, 42, 0.2)';
+        visibleNodes.forEach(node => {
+          const isCurrent = node.id === activeId;
+          const isHovered = hoveredNode && node.id === hoveredNode.id;
+          if (isCurrent || isHovered) return;
+          ctx.moveTo(node.x + node.radius + 4, node.y);
+          ctx.arc(node.x, node.y, node.radius + 4, 0, Math.PI * 2);
+        });
         ctx.fill();
 
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        
-        if (isCurrent) {
-          ctx.fillStyle = '#ffffff';
-          ctx.strokeStyle = '#818cf8';
-          ctx.lineWidth = 2.5 / zoom;
-          ctx.stroke();
-        } else if (isHovered) {
-          ctx.fillStyle = '#ffffff';
-          ctx.strokeStyle = nodeColor;
-          ctx.lineWidth = 2 / zoom;
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = nodeColor;
-        }
-        ctx.fill();
+        // Group 2: Draw the inner nodes in batch groups
+        Object.entries(nodesByColor).forEach(([color, nodeList]) => {
+          ctx.beginPath();
+          ctx.fillStyle = color;
+          nodeList.forEach(node => {
+            ctx.moveTo(node.x + node.radius, node.y);
+            ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+          });
+          ctx.fill();
+        });
 
-        // Show label if zoomed in, local mode, current node, index node, hovered node, or ancestor of selected
-        const shouldShowLabel = 
-          zoom > 0.8 ||
-          graphMode === 'local' || 
-          isCurrent || 
-          isHovered ||
-          node.id === 'index' || 
-          (selectedNoteNameRef.current && selectedNoteNameRef.current.toLowerCase().startsWith(node.id + '-'));
+        // Group 3: Interacting nodes (Selected, Hovered) drawn with individual strokes
+        visibleNodes.forEach(node => {
+          const isCurrent = node.id === activeId;
+          const isHovered = hoveredNode && node.id === hoveredNode.id;
+          if (!isCurrent && !isHovered) return;
 
-        if (shouldShowLabel) {
-          ctx.font = `${(isCurrent || isHovered) ? 'bold' : ''} ${12 / zoom}px sans-serif`;
-          ctx.fillStyle = (isCurrent || isHovered) ? '#ffffff' : '#a1a1aa';
-          ctx.textAlign = 'center';
-          ctx.fillText(node.name, node.x, node.y - node.radius - (8 / zoom));
-        }
-      });
+          const firstSegment = node.id === 'index' ? 'index' : node.id.split('-')[0];
+          const segmentIndex = activeTopSegments.indexOf(firstSegment);
+          const nodeColor = firstSegment === 'index' 
+            ? '#e2e8f0' 
+            : (branchColors[firstSegment] || palette[segmentIndex % palette.length]);
 
-      ctx.restore();
+          // Glow shadow ring
+          ctx.beginPath();
+          const displayRadius = node.radius + (isCurrent ? 6 : 5);
+          ctx.arc(node.x, node.y, displayRadius, 0, Math.PI * 2);
+          ctx.fillStyle = isCurrent ? 'rgba(99, 102, 241, 0.25)' : 'rgba(165, 180, 252, 0.2)';
+          ctx.fill();
+
+          // Circle fill & outline stroke
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+          
+          if (isCurrent) {
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#818cf8';
+            ctx.lineWidth = 2.5 / zoom;
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = nodeColor;
+            ctx.lineWidth = 2 / zoom;
+            ctx.stroke();
+          }
+          ctx.fill();
+        });
+
+        // 5. Draw text labels
+        visibleNodes.forEach(node => {
+          const isCurrent = node.id === activeId;
+          const isHovered = hoveredNode && node.id === hoveredNode.id;
+
+          const shouldShowLabel = 
+            zoom > 0.8 ||
+            graphMode === 'local' || 
+            isCurrent || 
+            isHovered ||
+            node.id === 'index' || 
+            (selectedNoteNameRef.current && selectedNoteNameRef.current.toLowerCase().startsWith(node.id + '-'));
+
+          if (shouldShowLabel) {
+            ctx.font = `${(isCurrent || isHovered) ? 'bold' : ''} ${12 / zoom}px sans-serif`;
+            ctx.fillStyle = (isCurrent || isHovered) ? '#ffffff' : '#a1a1aa';
+            ctx.textAlign = 'center';
+            ctx.fillText(node.name, node.x, node.y - node.radius - (8 / zoom));
+          }
+        });
+
+        ctx.restore();
+      }
 
       animationId = requestAnimationFrame(step);
     };
@@ -1422,6 +1528,7 @@ export default function App() {
       if (clicked) {
         draggedNode = clicked;
         setSelectedNoteName(clicked.id);
+        triggerRedraw();
       } else {
         isPanning = true;
         panStart.x = mousePos.x - pan.x;
@@ -1434,18 +1541,24 @@ export default function App() {
       const virtualPos = getVirtualMousePos(e);
       
       // Update hovered node tracking dynamically
+      const oldHover = hoveredNode;
       hoveredNode = activeNodes.find(node => {
         const dx = node.x - virtualPos.x;
         const dy = node.y - virtualPos.y;
         return Math.sqrt(dx * dx + dy * dy) < node.radius + 12;
       }) || null;
+      if (hoveredNode !== oldHover) {
+        triggerRedraw();
+      }
       
       if (draggedNode) {
         draggedNode.x = virtualPos.x;
         draggedNode.y = virtualPos.y;
+        triggerRedraw();
       } else if (isPanning) {
         pan.x = mousePos.x - panStart.x;
         pan.y = mousePos.y - panStart.y;
+        triggerRedraw();
       }
     };
 
@@ -1464,7 +1577,9 @@ export default function App() {
       
       pan.x = mousePos.x - (mousePos.x - pan.x) * (nextZoom / zoom);
       pan.y = mousePos.y - (mousePos.y - pan.y) * (nextZoom / zoom);
+      triggerRedraw();
       zoom = nextZoom;
+      triggerRedraw();
     };
 
     // Zoom Overlay Controls (Ref Bound Click Listeners)
@@ -1475,6 +1590,9 @@ export default function App() {
       pan.x = cx - (cx - pan.x) * (nextZoom / zoom);
       pan.y = cy - (cy - pan.y) * (nextZoom / zoom);
       zoom = nextZoom;
+      triggerRedraw();
+      triggerRedraw();
+      triggerRedraw();
     };
     const handleZoomOut = () => {
       const cx = canvas.width / 2;
@@ -1483,10 +1601,14 @@ export default function App() {
       pan.x = cx - (cx - pan.x) * (nextZoom / zoom);
       pan.y = cy - (cy - pan.y) * (nextZoom / zoom);
       zoom = nextZoom;
+      triggerRedraw();
+      triggerRedraw();
+      triggerRedraw();
     };
     const handleZoomReset = () => {
       zoom = graphMode === 'local' ? 1.0 : 0.6;
       pan = { x: canvas.width / 2, y: canvas.height / 2 };
+      triggerRedraw();
     };
 
     canvas.addEventListener('mousedown', handleMouseDown);
