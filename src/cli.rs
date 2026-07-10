@@ -29,6 +29,9 @@ pub enum Commands {
         
         #[arg(short, long, help = "Title of the memory note")]
         title: Option<String>,
+
+        #[arg(short, long, help = "Create the note in the user-wide global vault memories directory")]
+        global: bool,
     },
 
     #[command(about = "Link a code file reference to a memory note")]

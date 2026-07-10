@@ -9,27 +9,26 @@ use std::path::{Path, PathBuf};
 
 // Helper to resolve memory name or path to the exact path of the memory file
 fn resolve_memory_path(vault_path: &Path, input: &str) -> Result<PathBuf, String> {
-    let memories_dir = vault_path.join("memories");
-    
-    // Check if input is already a path pointing to a file
+    // 1. Check if input is already a path pointing to a file
     let path = PathBuf::from(input);
     if path.is_file() {
         return Ok(path);
     }
 
-    // Otherwise look up in memories dir
     let mut file_name = input.to_string();
     if !file_name.ends_with(".md") {
         file_name.push_str(".md");
     }
 
-    let resolved = memories_dir.join(&file_name);
+    // 2. Otherwise look up in local memories dir
+    let local_memories_dir = vault_path.join("memories");
+    let resolved = local_memories_dir.join(&file_name);
     if resolved.is_file() {
         return Ok(resolved);
     }
 
-    // Try lowercased lookup as fallback
-    if let Ok(entries) = fs::read_dir(&memories_dir) {
+    // Try lowercased lookup in local memories dir
+    if let Ok(entries) = fs::read_dir(&local_memories_dir) {
         let input_lower = file_name.to_lowercase();
         for entry in entries.flatten() {
             let p = entry.path();
@@ -39,9 +38,31 @@ fn resolve_memory_path(vault_path: &Path, input: &str) -> Result<PathBuf, String
         }
     }
 
+    // 3. Try global memories dir
+    if let Some(global_config_path) = crate::vault::get_global_config_path() {
+        if let Some(global_parent) = global_config_path.parent() {
+            let global_memories_dir = global_parent.join("memories");
+            let resolved_global = global_memories_dir.join(&file_name);
+            if resolved_global.is_file() {
+                return Ok(resolved_global);
+            }
+
+            // Lowercased lookup in global memories dir
+            if let Ok(entries) = fs::read_dir(&global_memories_dir) {
+                let input_lower = file_name.to_lowercase();
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_file() && p.file_name().and_then(|n| n.to_str()).map(|s| s.to_lowercase()) == Some(input_lower.clone()) {
+                        return Ok(p);
+                    }
+                }
+            }
+        }
+    }
+
     Err(format!(
-        "Memory file '{}' not found in memories directory {:?}",
-        input, memories_dir
+        "Memory file '{}' not found in local memories directory {:?} or global vault memories.",
+        input, local_memories_dir
     ))
 }
 
@@ -117,11 +138,26 @@ pub fn handle_add(
     name: String,
     tags: Option<String>,
     title: Option<String>,
+    global: bool,
 ) -> Result<(), String> {
-    let memories_dir = vault_path.join("memories");
-    if !memories_dir.exists() {
-        return Err("Vault not initialized. Run 'bw init' first.".to_string());
-    }
+    let memories_dir = if global {
+        let global_path = crate::vault::get_global_config_path()
+            .ok_or_else(|| "Could not locate global config path".to_string())?;
+        let parent = global_path.parent()
+            .ok_or_else(|| "Could not locate global config directory parent".to_string())?;
+        let dir = parent.join("memories");
+        if !dir.exists() {
+            fs::create_dir_all(&dir)
+                .map_err(|e| format!("Failed to create global memories directory: {}", e))?;
+        }
+        dir
+    } else {
+        let dir = vault_path.join("memories");
+        if !dir.exists() {
+            return Err("Vault not initialized. Run 'bw init' first.".to_string());
+        }
+        dir
+    };
 
     let mut safe_name = name.trim().replace(" ", "-");
     if !safe_name.ends_with(".md") {

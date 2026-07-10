@@ -247,22 +247,48 @@ You are an automated documenter. Your task is to update or generate memory files
 
 
 pub fn load_memories(vault_path: &Path) -> Result<Vec<MemoryPage>, String> {
-    let memories_dir = vault_path.join("memories");
-    if !memories_dir.is_dir() {
-        return Err(format!("Memories directory not found at {:?}", memories_dir));
-    }
-
     let mut memories = Vec::new();
-    for entry in fs::read_dir(memories_dir).map_err(|e| format!("Failed to read memories dir: {}", e))? {
-        let entry = entry.map_err(|e| format!("Directory entry error: {}", e))?;
-        let path = entry.path();
-        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-            let content = fs::read_to_string(&path)
-                .map_err(|e| format!("Failed to read memory file {:?}: {}", path, e))?;
-            let page = parse_memory_file(&content, &path)?;
-            memories.push(page);
+    let mut loaded_names = std::collections::HashSet::new();
+
+    // 1. Load Local Memories
+    let local_memories_dir = vault_path.join("memories");
+    if local_memories_dir.is_dir() {
+        for entry in fs::read_dir(local_memories_dir).map_err(|e| format!("Failed to read local memories dir: {}", e))? {
+            let entry = entry.map_err(|e| format!("Directory entry error: {}", e))?;
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                let content = fs::read_to_string(&path)
+                    .map_err(|e| format!("Failed to read local memory file {:?}: {}", path, e))?;
+                let page = parse_memory_file(&content, &path)?;
+                loaded_names.insert(page.name.to_lowercase());
+                memories.push(page);
+            }
         }
     }
+
+    // 2. Load Global Memories
+    if let Some(global_config_path) = get_global_config_path() {
+        if let Some(global_parent) = global_config_path.parent() {
+            let global_memories_dir = global_parent.join("memories");
+            if global_memories_dir.is_dir() {
+                for entry in fs::read_dir(global_memories_dir).map_err(|e| format!("Failed to read global memories dir: {}", e))? {
+                    let entry = entry.map_err(|e| format!("Directory entry error: {}", e))?;
+                    let path = entry.path();
+                    if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                        let content = fs::read_to_string(&path)
+                            .map_err(|e| format!("Failed to read global memory file {:?}: {}", path, e))?;
+                        let page = parse_memory_file(&content, &path)?;
+                        let name_lower = page.name.to_lowercase();
+                        if !loaded_names.contains(&name_lower) {
+                            loaded_names.insert(name_lower);
+                            memories.push(page);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(memories)
 }
 

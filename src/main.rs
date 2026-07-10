@@ -31,14 +31,16 @@ fn main() {
                 commands::handle_status(&vault_path)
             }
         }
-        Commands::Add { name, tags, title } => {
-            if !vault_path.is_dir() {
+        Commands::Add { name, tags, title, global } => {
+            if global {
+                commands::handle_add(&vault_path, name, tags, title, true)
+            } else if !vault_path.is_dir() {
                 Err(format!(
-                    "Vault directory {:?} does not exist. Initialize it first using 'bw init'.",
+                    "Vault directory {:?} does not exist. Initialize it first using 'bw init' or use --global to add a user-wide memory.",
                     vault_path
                 ))
             } else {
-                commands::handle_add(&vault_path, name, tags, title)
+                commands::handle_add(&vault_path, name, tags, title, false)
             }
         }
         Commands::Link { memory, code_file } => {
