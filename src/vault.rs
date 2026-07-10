@@ -116,17 +116,19 @@ This is the main entry point of your brainwares memory vault.
     // 2. Create memories/getting-started.md
     let getting_started_path = memories_dir.join("getting-started.md");
     if !getting_started_path.exists() {
-        // Try to find a file to hash for the demo reference
-        let (ref_file, ref_hash) = if workspace_root.join("Cargo.toml").is_file() {
-            let hash = crate::hash::calculate_file_hash(workspace_root.join("Cargo.toml"))
+        // Try to find any existing file in the workspace to hash for the demo reference
+        let (ref_file, ref_hash) = if let Some(file_path) = find_any_file_in_workspace(&workspace_root) {
+            let full_path = workspace_root.join(&file_path);
+            let hash = crate::hash::calculate_file_hash(&full_path)
                 .unwrap_or_else(|_| "d41d8cd98f00b204e9800998ecf8427e".to_string());
-            ("Cargo.toml", hash)
-        } else if workspace_root.join("README.md").is_file() {
-            let hash = crate::hash::calculate_file_hash(workspace_root.join("README.md"))
-                .unwrap_or_else(|_| "d41d8cd98f00b204e9800998ecf8427e".to_string());
-            ("README.md", hash)
+            (file_path, hash)
         } else {
-            ("Cargo.toml", "d41d8cd98f00b204e9800998ecf8427e".to_string())
+            // Write a fallback README.md if the workspace is completely empty
+            let readme_path = workspace_root.join("README.md");
+            let _ = fs::write(&readme_path, "# README\n");
+            let hash = crate::hash::calculate_file_hash(&readme_path)
+                .unwrap_or_else(|_| "d41d8cd98f00b204e9800998ecf8427e".to_string());
+            ("README.md".to_string(), hash)
         };
 
         let default_getting_started = format!("\
@@ -348,5 +350,51 @@ pub fn get_backlinks(memories: &[MemoryPage]) -> HashMap<String, Vec<Backlink>> 
     }
 
     backlinks_map
+}
+
+pub fn find_any_file_in_workspace(workspace_root: &Path) -> Option<String> {
+    // Try root Cargo.toml
+    if workspace_root.join("Cargo.toml").is_file() {
+        return Some("Cargo.toml".to_string());
+    }
+    // Try root README.md
+    if workspace_root.join("README.md").is_file() {
+        return Some("README.md".to_string());
+    }
+    // Try any other file in workspace root first
+    if let Ok(entries) = fs::read_dir(workspace_root) {
+        for entry in entries {
+            if let Ok(e) = entry {
+                let path = e.path();
+                if path.is_file() {
+                    if let Some(name) = path.file_name() {
+                        let name_str = name.to_string_lossy().to_string();
+                        if !name_str.starts_with('.') && name_str != "package-lock.json" && name_str != "pnpm-lock.yaml" {
+                            return Some(name_str);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Fallback to recursive scan
+    let walker = walkdir::WalkDir::new(workspace_root)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            !name.starts_with('.') && name != "node_modules" && name != "target" && name != "bin" && name != "obj"
+        });
+        
+    for entry in walker {
+        if let Ok(e) = entry {
+            let path = e.path();
+            if path.is_file() {
+                if let Ok(rel) = path.strip_prefix(workspace_root) {
+                    return Some(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    None
 }
 

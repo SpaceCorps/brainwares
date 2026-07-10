@@ -1899,7 +1899,8 @@ pub fn handle_index(vault_path: &Path) -> Result<(), String> {
 }
 
 fn humanize_title(name: &str) -> String {
-    name.split(&['_', '-', '/'])
+    let clean_name = name.replace("[[", "[").replace("]]", "]");
+    clean_name.split(&['_', '-', '/'])
         .map(|word| {
             let mut chars = word.chars();
             match chars.next() {
