@@ -933,15 +933,19 @@ import {
 import data from './data.json';
 
 const renderer = new marked.Renderer();
-const originalLink = renderer.link.bind(renderer);
 renderer.link = (href, title, text) => {
-  if (href.startsWith('wiki:')) {
+  if (href && href.startsWith('wiki:')) {
     const noteName = href.replace('wiki:', '');
     return `<a href="#" class="wiki-link text-indigo-400 hover:text-indigo-300 font-semibold underline decoration-indigo-500/40" data-note="${noteName}">${text}</a>`;
   }
-  return originalLink(href, title, text);
+  let out = `<a href="${href || '#'}"`;
+  if (title) {
+    out += ` title="${title}"`;
+  }
+  out += `>${text}</a>`;
+  return out;
 };
-marked.setOptions({ renderer });
+marked.use({ renderer });
 
 export default function App() {
   const [memories, setMemories] = useState(data.memories || []);
@@ -952,6 +956,7 @@ export default function App() {
   const canvasRef = useRef(null);
 
   const preprocessMarkdown = (text) => {
+    if (!text) return '';
     return text.replace(/\[\[(.*?)\]\]/g, (match, note) => {
       const parts = note.split('|');
       const target = parts[0].trim();
@@ -961,8 +966,8 @@ export default function App() {
     });
   };
 
-  const selectedNote = memories.find(m => m.name.toLowerCase() === selectedNoteName.toLowerCase()) 
-    || memories.find(m => m.name.toLowerCase() === 'index') 
+  const selectedNote = memories.find(m => m && m.name && m.name.toLowerCase() === selectedNoteName.toLowerCase()) 
+    || memories.find(m => m && m.name && m.name.toLowerCase() === 'index') 
     || memories[0];
 
   useEffect(() => {
@@ -980,15 +985,21 @@ export default function App() {
     }
   };
 
-  const allTags = Array.from(new Set(memories.flatMap(m => m.frontmatter.tags || [])));
+  const allTags = Array.from(new Set(memories.flatMap(m => m?.frontmatter?.tags || [])));
 
   const filteredNotes = memories.filter(m => {
-    const matchesSearch = searchQuery === '' || 
-      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (m.frontmatter.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.body.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!m) return false;
+    const nameLower = (m.name || '').toLowerCase();
+    const titleLower = (m.frontmatter?.title || '').toLowerCase();
+    const bodyLower = (m.body || '').toLowerCase();
+    const query = searchQuery.toLowerCase();
     
-    const matchesTag = !selectedTag || (m.frontmatter.tags || []).includes(selectedTag);
+    const matchesSearch = searchQuery === '' || 
+      nameLower.includes(query) ||
+      titleLower.includes(query) ||
+      bodyLower.includes(query);
+    
+    const matchesTag = !selectedTag || (m.frontmatter?.tags || []).includes(selectedTag);
     return matchesSearch && matchesTag;
   });
 
@@ -1007,29 +1018,37 @@ export default function App() {
     const nodes = memories.map((m, index) => {
       const angle = (index / memories.length) * Math.PI * 2;
       const radius = Math.min(canvas.width, canvas.height) * 0.3;
+      const id = (m.name || '').toLowerCase();
+      const name = m.frontmatter?.title || m.name || '';
+      const isCurrent = id === (selectedNoteName || '').toLowerCase();
+      const isGlobal = (m.file_path || '').includes('.config');
       return {
-        id: m.name.toLowerCase(),
-        name: m.frontmatter.title || m.name,
+        id,
+        name,
         x: canvas.width / 2 + Math.cos(angle) * radius,
         y: canvas.height / 2 + Math.sin(angle) * radius,
         vx: 0,
         vy: 0,
-        radius: m.name.toLowerCase() === selectedNoteName.toLowerCase() ? 12 : 8,
-        isGlobal: m.file_path.includes('.config'),
+        radius: isCurrent ? 12 : 8,
+        isGlobal,
       };
     });
 
     const edges = [];
     memories.forEach(m => {
-      const matches = m.body.match(/\[\[(.*?)\]\]/g) || [];
+      if (!m) return;
+      const body = m.body || '';
+      const matches = body.match(/\[\[(.*?)\]\]/g) || [];
       matches.forEach(match => {
         const target = match.replace(/\[\[|\]\]/g, '').split('|')[0].trim()
           .toLowerCase().replace(/ /g, '-').replace(/_/g, '-');
         
-        if (nodes.some(n => n.id === target)) {
+        const source_node = nodes.find(n => n.id === m.name.toLowerCase());
+        const target_node = nodes.find(n => n.id === target);
+        if (source_node && target_node) {
           edges.push({
-            source: nodes.find(n => n.id === m.name.toLowerCase()),
-            target: nodes.find(n => n.id === target),
+            source: source_node,
+            target: target_node,
           });
         }
       });
@@ -1195,8 +1214,8 @@ export default function App() {
   }, [viewMode, memories, selectedNoteName]);
 
   const totalNotes = memories.length;
-  const globalNotesCount = memories.filter(m => m.file_path.includes('.config')).length;
-  const outdatedNotesCount = memories.filter(m => (m.frontmatter.references || []).some(r => r.status && r.status !== 'OK')).length;
+  const globalNotesCount = memories.filter(m => m && (m.file_path || '').includes('.config')).length;
+  const outdatedNotesCount = memories.filter(m => m && (m.frontmatter?.references || []).some(r => r.status && r.status !== 'OK')).length;
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans">
@@ -1262,9 +1281,9 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1">
           {filteredNotes.map(m => {
-            const isCurrent = m.name.toLowerCase() === selectedNoteName.toLowerCase();
-            const isGlobal = m.file_path.includes('.config');
-            const hasOutdated = (m.frontmatter.references || []).some(r => r.status && r.status !== 'OK');
+            const isCurrent = (m.name || '').toLowerCase() === (selectedNoteName || '').toLowerCase();
+            const isGlobal = (m.file_path || '').includes('.config');
+            const hasOutdated = (m.frontmatter?.references || []).some(r => r.status && r.status !== 'OK');
 
             return (
               <button
@@ -1336,13 +1355,13 @@ export default function App() {
                   <article className="max-w-3xl mx-auto prose prose-invert prose-indigo">
                     <div className="mb-8 border-b border-zinc-900 pb-6">
                       <div className="flex flex-wrap gap-2 mb-3">
-                        {(selectedNote.frontmatter.tags || []).map(t => (
+                        {(selectedNote.frontmatter?.tags || []).map(t => (
                           <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center space-x-1">
                             <Tag size={10} />
                             <span>{t}</span>
                           </span>
                         ))}
-                        {selectedNote.file_path.includes('.config') && (
+                        {(selectedNote.file_path || '').includes('.config') && (
                           <span className="px-2 py-0.5 rounded-full text-xs bg-orange-950 border border-orange-500/20 text-orange-400 font-semibold font-mono">
                             Global User Preference
                           </span>
@@ -1350,11 +1369,11 @@ export default function App() {
                       </div>
 
                       <h1 className="text-3xl font-bold tracking-tight text-zinc-100 mb-2">
-                        {selectedNote.frontmatter.title || selectedNote.name}
+                        {selectedNote.frontmatter?.title || selectedNote.name}
                       </h1>
                       
                       <div className="text-xs text-zinc-500 font-mono">
-                        Last Updated: {selectedNote.frontmatter.last_updated || 'Unknown'}
+                        Last Updated: {selectedNote.frontmatter?.last_updated || 'Unknown'}
                       </div>
                     </div>
 
@@ -1381,14 +1400,14 @@ export default function App() {
                       </h3>
                       
                       <div className="space-y-2">
-                        {selectedNote.frontmatter.references && selectedNote.frontmatter.references.length > 0 ? (
-                          selectedNote.frontmatter.references.map(ref => {
+                        {(selectedNote.frontmatter?.references || []).length > 0 ? (
+                          (selectedNote.frontmatter?.references || []).map(ref => {
                             const isOk = ref.status === 'OK';
                             return (
                               <div key={ref.file_path} className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-xl flex items-center justify-between">
                                 <div className="min-w-0 flex-1 pr-2">
                                   <div className="text-xs font-mono truncate text-zinc-300" title={ref.file_path}>
-                                    {ref.file_path.split('/').pop()}
+                                    {(ref.file_path || '').split('/').pop()}
                                   </div>
                                   <div className="text-[10px] text-zinc-600 truncate">{ref.file_path}</div>
                                 </div>
