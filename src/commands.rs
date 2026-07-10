@@ -1857,10 +1857,6 @@ fn scan_key_files_in_dir(
             path: rel_path,
             hash,
         });
-        
-        if references.len() >= 5 {
-            break;
-        }
     }
 }
 
