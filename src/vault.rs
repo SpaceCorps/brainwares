@@ -213,6 +213,18 @@ You are an automated documenter. Your task is to update or generate memory files
             .map_err(|e| format!("Failed to create logs directory: {}", e))?;
     }
 
+    // 4.5. Create .gitignore inside the vault
+    let gitignore_path = vault_path.join(".gitignore");
+    if !gitignore_path.exists() {
+        let default_gitignore = "\
+# Ignore temporary runtime logs and visualizer files
+logs/
+ui/
+";
+        fs::write(gitignore_path, default_gitignore)
+            .map_err(|e| format!("Failed to write .gitignore inside vault: {}", e))?;
+    }
+
     // Ensure global config exists
     if let Some(global_path) = get_global_config_path() {
         if !global_path.exists() {
