@@ -639,6 +639,7 @@ Whenever a `.brainwares` vault directory is detected in the active workspace, th
             ("CLAUDE.md", "Claude Code"),
             (".cursorrules", "Cursor"),
             (".windsurfrules", "Windsurf"),
+            ("AGENTS.md", "OpenCode"),
         ];
 
         let old_agent_rules_str = r#"# Brainwares Workspace Integration Rules
