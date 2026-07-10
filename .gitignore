@@ -1,1 +1,13 @@
+# Rust
 /target
+
+# Node / UI
+.brainwares/ui/node_modules/
+.brainwares/ui/dist/
+.brainwares/ui/src/data.json
+
+# Logs
+.brainwares/logs/
+
+# OS-specific
+.DS_Store
