@@ -54,19 +54,85 @@ pub fn serialize_memory_file(page: &MemoryPage) -> Result<String, String> {
 }
 
 pub fn extract_wiki_links(body: &str) -> Vec<(String, String)> {
-    // Regex for [[PageName]] or [[PageName#Header]] or [[PageName|Label]]
-    // Group 1 captures the page name (excluding # or | components)
-    // Group 0 captures the full raw link e.g. [[PageName#Header|Label]]
-    let re = Regex::new(r"\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]").unwrap();
     let mut links = Vec::new();
-    for cap in re.captures_iter(body) {
-        if let Some(target) = cap.get(1) {
-            let target_name = target.as_str().trim().to_string();
-            let raw_match = cap.get(0).unwrap().as_str().to_string();
-            links.push((target_name, raw_match));
+    let re = Regex::new(r"\[\[([^\]#|]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]").unwrap();
+    
+    let mut in_code_block = false;
+    
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        
+        if in_code_block {
+            continue;
+        }
+        
+        // Strip inline code segments (e.g. `[[...slug]]` -> "")
+        let clean_line = clean_inline_code(line);
+        
+        for cap in re.captures_iter(&clean_line) {
+            if let Some(target) = cap.get(1) {
+                let target_name = target.as_str().trim().to_string();
+                let raw_match = cap.get(0).unwrap().as_str().to_string();
+                links.push((target_name, raw_match));
+            }
         }
     }
+    
     links
+}
+
+fn clean_inline_code(line: &str) -> String {
+    let mut clean = String::new();
+    let chars: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    
+    while i < chars.len() {
+        if chars[i] == '`' {
+            // Count opening backticks
+            let mut count = 0;
+            while i < chars.len() && chars[i] == '`' {
+                count += 1;
+                i += 1;
+            }
+            
+            // Find matching closing backticks
+            let mut found_match = false;
+            let mut j = i;
+            while j < chars.len() {
+                if chars[j] == '`' {
+                    let mut close_count = 0;
+                    while j + close_count < chars.len() && chars[j + close_count] == '`' {
+                        close_count += 1;
+                    }
+                    if close_count == count {
+                        found_match = true;
+                        i = j + close_count;
+                        break;
+                    } else {
+                        j += close_count;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+            
+            if !found_match {
+                // If no matching closing backticks, treat opening backticks as literal text
+                for _ in 0..count {
+                    clean.push('`');
+                }
+            }
+        } else {
+            clean.push(chars[i]);
+            i += 1;
+        }
+    }
+    
+    clean
 }
 
 #[cfg(test)]
@@ -99,5 +165,23 @@ Body text with [[Another Note#Section|Label]].
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].0, "Another Note");
         assert_eq!(links[0].1, "[[Another Note#Section|Label]]");
+    }
+
+    #[test]
+    fn test_extract_wiki_links_ignores_code() {
+        let body = "\
+This is a normal [[Active Link]].
+Inline code `[[Ignored Inline Link]]` or `[[...slug]]`.
+Multiple backticks: `` `[[Another Ignored]]` ``.
+Code block:
+```rust
+let x = [[Ignored Code Block Link]];
+```
+Normal link after code block: [[Active Link 2]].
+";
+        let links = extract_wiki_links(body);
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].0, "Active Link");
+        assert_eq!(links[1].0, "Active Link 2");
     }
 }

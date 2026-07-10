@@ -305,10 +305,17 @@ pub fn load_memories(vault_path: &Path) -> Result<Vec<MemoryPage>, String> {
 }
 
 pub fn normalize_memory_name(name: &str) -> String {
-    name.to_lowercase()
+    let mut normalized = name.to_lowercase()
         .replace(" ", "-")
         .replace("_", "-")
-        .replace(".md", "")
+        .replace(".md", "");
+    
+    // Strip brackets, parentheses, braces, and other symbols that break wiki-links or file paths
+    normalized.retain(|c| {
+        c != '[' && c != ']' && c != '(' && c != ')' && c != '{' && c != '}' && c != '*' && c != '?' && c != ':' && c != '"' && c != '\''
+    });
+    
+    normalized
 }
 
 pub fn get_backlinks(memories: &[MemoryPage]) -> HashMap<String, Vec<Backlink>> {
