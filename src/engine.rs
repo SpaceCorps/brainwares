@@ -24,6 +24,7 @@ pub struct MemoryCheckResult {
     pub references: Vec<FileCheckResult>,
     pub broken_links: Vec<String>, // list of targets that don't exist
     pub is_orphan: bool,
+    pub has_placeholders: bool,
 }
 
 pub struct VaultStatus {
@@ -32,6 +33,7 @@ pub struct VaultStatus {
     pub outdated_memories_count: usize,
     pub broken_links_count: usize,
     pub orphan_count: usize,
+    pub incomplete_memories_count: usize,
 }
 
 pub fn check_vault_status(vault_path: &Path, memories: &[MemoryPage]) -> VaultStatus {
@@ -121,14 +123,20 @@ pub fn check_vault_status(vault_path: &Path, memories: &[MemoryPage]) -> VaultSt
             outdated_memories_count += 1;
         }
 
+        // Check for uncompleted template placeholders
+        let has_placeholders = page.body.contains("[Enter description") || page.body.contains("[Enter ");
+        
         results.push(MemoryCheckResult {
             memory_name: page.name.clone(),
             file_path: page.file_path.clone(),
             references: references_status,
             broken_links,
             is_orphan,
+            has_placeholders,
         });
     }
+
+    let incomplete_count = results.iter().filter(|r| r.has_placeholders).count();
 
     VaultStatus {
         memories: results,
@@ -136,5 +144,6 @@ pub fn check_vault_status(vault_path: &Path, memories: &[MemoryPage]) -> VaultSt
         outdated_memories_count,
         broken_links_count,
         orphan_count,
+        incomplete_memories_count: incomplete_count,
     }
 }

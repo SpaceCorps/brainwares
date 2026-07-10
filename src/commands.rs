@@ -115,6 +115,10 @@ pub fn handle_status(vault_path: &Path) -> Result<(), String> {
             issues.push("  [ORPHAN] Not linked by any other memory page".to_string());
         }
 
+        if m.has_placeholders {
+            issues.push("  [INCOMPLETE] Contains pending file descriptions ([Enter description...])".to_string());
+        }
+
         if !issues.is_empty() {
             println!("Memory: {}", m.memory_name);
             for issue in issues {
@@ -125,9 +129,10 @@ pub fn handle_status(vault_path: &Path) -> Result<(), String> {
     }
 
     println!("------------------------------------------------");
-    println!("Outdated memories:  {}", status.outdated_memories_count);
-    println!("Broken wiki-links:  {}", status.broken_links_count);
-    println!("Orphan memories:    {}", status.orphan_count);
+    println!("Outdated memories:     {}", status.outdated_memories_count);
+    println!("Broken wiki-links:     {}", status.broken_links_count);
+    println!("Orphan memories:       {}", status.orphan_count);
+    println!("Incomplete templates:  {}", status.incomplete_memories_count);
     println!("================================================");
 
     Ok(())

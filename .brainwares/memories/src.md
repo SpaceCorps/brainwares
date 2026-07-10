@@ -4,7 +4,7 @@ references:
 - path: src/models.rs
   hash: 3e4520b4d8c1a579f27c3946709f540dfffe58a3a24b49835e59614d8ae5fb49
 - path: src/commands.rs
-  hash: d6fd96aaf669888cf11dc83727d52c774cc5bdeeab7c2ae057fa49d324857b1f
+  hash: 870e7d429fb4299f8a936f1236c81f0812bb1418d776c99685d3dbf4096e6f81
 - path: src/main.rs
   hash: 3e87c84fb656903f530edde0333feb2fe304a433948615cd6c4ebca9f9e22abc
 - path: src/parser.rs
@@ -16,11 +16,11 @@ references:
 - path: src/cli.rs
   hash: 30453e1a5f6f09e932c9032f36a80c2e4877f23d2298ad228b64e8d25d6ce77a
 - path: src/engine.rs
-  hash: 7ad12d7727ca2663b4d26743c62722bea883e17f2c387b3b700dada5d4919ea1
+  hash: ca88fa4d18bf76d5031aab210b8ceb5de58c90dffd879338a0aa990164daef5e
 tags:
 - folder
 - index
-last_updated: 2026-07-10T12:20:09.091176+00:00
+last_updated: 2026-07-10T12:21:05.690843+00:00
 ---
 
 # Src
@@ -29,11 +29,11 @@ Scaffolded memory page for the `src` directory.
 
 ## Core Files Reference Map
 
-*   `models.rs`: [Enter description for file's role in this folder]
-*   `commands.rs`: [Enter description for file's role in this folder]
-*   `main.rs`: [Enter description for file's role in this folder]
-*   `parser.rs`: [Enter description for file's role in this folder]
-*   `hash.rs`: [Enter description for file's role in this folder]
-*   `vault.rs`: [Enter description for file's role in this folder]
-*   `cli.rs`: [Enter description for file's role in this folder]
-*   `engine.rs`: [Enter description for file's role in this folder]
+*   `models.rs`: Data structures and serialization schemas for config and memory frontmatter.
+*   `commands.rs`: Core handlers for CLI subcommands including init, status, indexing, and UI visualization.
+*   `main.rs`: Entry point parsing CLI arguments and routing subcommand handlers.
+*   `parser.rs`: Obsidian-style Markdown frontmatter parser and wiki-link extractor.
+*   `hash.rs`: File hashing helper using SHA-256 to detect out-of-date states.
+*   `vault.rs`: Vault configuration loading, path helpers, and memory backlink resolver.
+*   `cli.rs`: Command Line Interface structure definitions mapped via clap.
+*   `engine.rs`: Diagnostic status check, validation rules, and context loader routines.
