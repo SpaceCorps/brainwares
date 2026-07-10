@@ -1268,12 +1268,23 @@ export default function App() {
       }
 
       // Draw edges
-      ctx.strokeStyle = '#3f3f46';
-      ctx.lineWidth = 1.5;
       activeEdges.forEach(edge => {
+        const isConnectedToSelected = selectedNoteName && (
+          edge.source.id === selectedNoteName.toLowerCase() || 
+          edge.target.id === selectedNoteName.toLowerCase()
+        );
+        
         ctx.beginPath();
         ctx.moveTo(edge.source.x, edge.source.y);
         ctx.lineTo(edge.target.x, edge.target.y);
+        
+        if (isConnectedToSelected) {
+          ctx.strokeStyle = '#818cf8'; // Glowing indigo edge for active connections
+          ctx.lineWidth = 2;
+        } else {
+          ctx.strokeStyle = '#27272a'; // Faint gray edge for other connections
+          ctx.lineWidth = 1;
+        }
         ctx.stroke();
       });
 
@@ -1281,27 +1292,68 @@ export default function App() {
       activeNodes.forEach(node => {
         const isCurrent = node.id === selectedNoteName.toLowerCase();
         
+        // Find top-level segment for branch color-coding
+        const firstSegment = node.id === 'index' ? 'index' : node.id.split('-')[0];
+        
+        const branchColors = {
+          'index': '#e2e8f0', // Zinc white for index root
+          'ivy': '#38bdf8', // Light blue
+          'src': '#818cf8', // Indigo
+        };
+        
+        const palette = [
+          '#34d399', // Emerald
+          '#f59e0b', // Amber
+          '#ec4899', // Pink
+          '#06b6d4', // Cyan
+          '#a855f7', // Purple
+          '#f43f5e', // Rose
+          '#10b981', // Green
+          '#fb7185', // Soft Rose
+          '#60a5fa', // Soft Blue
+        ];
+        
+        const activeTopSegments = Array.from(new Set(
+          activeNodes
+            .map(n => n.id === 'index' ? 'index' : n.id.split('-')[0])
+            .filter(s => s !== 'index')
+        ));
+        
+        const segmentIndex = activeTopSegments.indexOf(firstSegment);
+        const nodeColor = firstSegment === 'index' 
+          ? '#e2e8f0' 
+          : (branchColors[firstSegment] || palette[segmentIndex % palette.length]);
+
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius + (isCurrent ? 6 : 4), 0, Math.PI * 2);
-        ctx.fillStyle = isCurrent ? 'rgba(99, 102, 241, 0.15)' : 'rgba(39, 39, 42, 0.4)';
+        ctx.fillStyle = isCurrent ? 'rgba(99, 102, 241, 0.25)' : 'rgba(39, 39, 42, 0.2)';
         ctx.fill();
 
         ctx.beginPath();
         ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
         
         if (isCurrent) {
-          ctx.fillStyle = '#818cf8';
-        } else if (node.isGlobal) {
-          ctx.fillStyle = '#f97316';
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#818cf8';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
         } else {
-          ctx.fillStyle = '#6366f1';
+          ctx.fillStyle = nodeColor;
         }
         ctx.fill();
 
-        ctx.font = isCurrent ? 'bold 12px sans-serif' : '11px sans-serif';
-        ctx.fillStyle = isCurrent ? '#f4f4f5' : '#a1a1aa';
-        ctx.textAlign = 'center';
-        ctx.fillText(node.name, node.x, node.y - node.radius - 8);
+        const shouldShowLabel = 
+          graphMode === 'local' || 
+          isCurrent || 
+          node.id === 'index' || 
+          (selectedNoteName && selectedNoteName.toLowerCase().startsWith(node.id + '-'));
+
+        if (shouldShowLabel) {
+          ctx.font = isCurrent ? 'bold 12px sans-serif' : '11px sans-serif';
+          ctx.fillStyle = isCurrent ? '#ffffff' : '#a1a1aa';
+          ctx.textAlign = 'center';
+          ctx.fillText(node.name, node.x, node.y - node.radius - 8);
+        }
       });
 
       animationId = requestAnimationFrame(step);
