@@ -4,10 +4,62 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub fn get_global_config_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    Some(PathBuf::from(home).join(".config").join("brainwares").join("config.json"))
+}
+
+pub fn load_global_config() -> Config {
+    if let Some(path) = get_global_config_path() {
+        if path.is_file() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(config) = serde_json::from_str::<Config>(&content) {
+                    return config;
+                }
+            }
+        }
+    }
+    Config::default()
+}
+
+pub fn load_local_config(vault_path: &Path) -> Option<Config> {
+    let config_path = vault_path.join("config.json");
+    if config_path.is_file() {
+        if let Ok(content) = fs::read_to_string(&config_path) {
+            if let Ok(config) = serde_json::from_str::<Config>(&content) {
+                return Some(config);
+            }
+        }
+    }
+    None
+}
+
+pub fn load_merged_config(vault_path: &Path) -> Config {
+    let mut config = load_global_config();
+    if let Some(local) = load_local_config(vault_path) {
+        config.default_vault_dir = local.default_vault_dir;
+        
+        // Merge ignore patterns and deduplicate
+        let mut merged_ignores = config.ignore_patterns;
+        for pattern in local.ignore_patterns {
+            if !merged_ignores.contains(&pattern) {
+                merged_ignores.push(pattern);
+            }
+        }
+        config.ignore_patterns = merged_ignores;
+    }
+    config
+}
+
 pub fn find_vault_path() -> PathBuf {
+    let global_config = load_global_config();
+    let vault_dir_name = &global_config.default_vault_dir;
+
     let mut current = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     loop {
-        let candidate = current.join(".brainwares");
+        let candidate = current.join(vault_dir_name);
         if candidate.is_dir() {
             return candidate;
         }
@@ -15,8 +67,8 @@ pub fn find_vault_path() -> PathBuf {
             break;
         }
     }
-    // Default to local directory .brainwares
-    PathBuf::from(".brainwares")
+    // Default to local directory
+    PathBuf::from(vault_dir_name)
 }
 
 pub fn get_workspace_root(vault_path: &Path) -> PathBuf {
@@ -161,18 +213,32 @@ You are an automated documenter. Your task is to update or generate memory files
             .map_err(|e| format!("Failed to create logs directory: {}", e))?;
     }
 
+    // Ensure global config exists
+    if let Some(global_path) = get_global_config_path() {
+        if !global_path.exists() {
+            if let Some(parent) = global_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let default_config = Config::default();
+            if let Ok(content) = serde_json::to_string_pretty(&default_config) {
+                let _ = fs::write(&global_path, content);
+            }
+        }
+    }
+
     let config_path = vault_path.join("config.json");
     let config = if config_path.exists() {
         let content = fs::read_to_string(&config_path)
-            .map_err(|e| format!("Failed to read config: {}", e))?;
+            .map_err(|e| format!("Failed to read local config: {}", e))?;
         serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse config: {}", e))?
+            .map_err(|e| format!("Failed to parse local config: {}", e))?
     } else {
+        // Local config will default to standard settings
         let default_config = Config::default();
         let content = serde_json::to_string_pretty(&default_config)
-            .map_err(|e| format!("Failed to serialize default config: {}", e))?;
+            .map_err(|e| format!("Failed to serialize default local config: {}", e))?;
         fs::write(&config_path, content)
-            .map_err(|e| format!("Failed to write default config: {}", e))?;
+            .map_err(|e| format!("Failed to write default local config: {}", e))?;
         default_config
     };
 

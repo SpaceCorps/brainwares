@@ -681,6 +681,30 @@ pub fn handle_doctor() -> Result<(), String> {
         println!("    -> Run 'bw init' to bootstrap a vault in this project.");
     }
 
+    // 5. Check configuration files
+    if let Some(global_config_path) = crate::vault::get_global_config_path() {
+        if global_config_path.is_file() {
+            println!("[✓] User-wide global config found at {:?}", global_config_path);
+            let global_config = crate::vault::load_global_config();
+            println!("    Default vault folder name: '{}'", global_config.default_vault_dir);
+            println!("    Global ignore patterns: {:?}", global_config.ignore_patterns);
+        } else {
+            println!("[ ] Global config not found (will be initialized upon running 'bw init').");
+        }
+    }
+
+    if local_vault.is_dir() {
+        if let Some(local_config) = crate::vault::load_local_config(&local_vault) {
+            println!("[✓] Repository-wide local config found.");
+            println!("    Local ignore patterns: {:?}", local_config.ignore_patterns);
+            
+            let merged = crate::vault::load_merged_config(&local_vault);
+            println!("    Effective merged ignore patterns: {:?}", merged.ignore_patterns);
+        } else {
+            println!("[✗] Local config file config.json not found in vault.");
+        }
+    }
+
     println!("------------------------------------------------");
     Ok(())
 }
