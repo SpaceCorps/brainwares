@@ -79,7 +79,7 @@ Move the compiled binary `target/release/brainwares` (or `bw`) into your system'
 | :--- | :--- | :--- |
 | `bw init` | None | Initialize `.brainwares/` vault in the current directory. |
 | `bw status` | None | Verify hashes of all referenced code files, check broken wiki-links, and list orphan files. |
-| `bw add` | `<name> [--tags tags] [--title title]` | Create a new memory note. |
+| `bw add` | `<name> [--tags tags] [--title title] [--global]` | Create a new memory note (add `--global` / `-g` for user-wide vault). |
 | `bw link` | `<memory_name> <code_path>` | Link a code file to a memory note (adds file and its current hash to frontmatter). |
 | `bw update` | `<memory_name> [code_path]` | Recalculate and update stored hash(es) to match current filesystem state (re-verifies memories). |
 | `bw shake` | None | Report dead links, prune orphan notes, and delete empty log files. |
